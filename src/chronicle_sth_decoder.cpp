@@ -23,7 +23,6 @@
 #include <string>
 #include <string_view>
 
-#include "state_history_client.hpp"
 
 struct by_id;
 
@@ -57,6 +56,9 @@ namespace websocket = boost::beast::websocket;
 using asio::ip::tcp;
 using boost::beast::flat_buffer;
 using boost::system::error_code;
+
+#include "state_history_client.hpp"
+
 
 // decoder state database objects
 
@@ -135,11 +137,10 @@ struct session : enable_shared_from_this<session> {
   uint32_t                              first_bulk      = 0;
   abi_def                               abi{};
   map<string, abi_type>                 abi_types;
-  map<string, unique_ptr<table_stream>> table_streams;
 
   explicit session(asio::io_context& ioc, string host, string port, uint32_t skip_to,
                    string data_dir, uint32_t db_size)
-    : db(data_dir, database::read_write, db_size),
+    : db(data_dir, chainbase::database::read_write, db_size),
       resolver(ioc), stream(ioc),
       host(move(host)), port(move(port)),
       skip_to(skip_to) {
@@ -182,10 +183,10 @@ struct session : enable_shared_from_this<session> {
     const auto& idx = db.get_index<chronicle::state_index, chronicle::by_id>();
     auto state = idx.find(0);
     if( state != idx.end() ) {
-      head = state.head;
-      head_id = state.head_id;
-      irreversible = state.irreversible;
-      irreversible_id = state.irreversible_id;
+      head = state->head;
+      head_id = state->head_id;
+      irreversible = state->irreversible;
+      irreversible_id = state->irreversible_id;
     }
     else {
       head = 0;
@@ -258,7 +259,7 @@ struct session : enable_shared_from_this<session> {
     while( itr != idx.end() && itr->block_index <= head ) {
       positions.push_back(jvalue{jobject{
             {{"block_num"s}, {itr->block_index}},
-              {{"block_id"s}, {itr->block_id.as<string>()}},
+              {{"block_id"s}, {(string)itr->block_id}},
                 }});
     }
 
@@ -297,7 +298,7 @@ struct session : enable_shared_from_this<session> {
     log_time();
     cerr << "block " << result.this_block->block_num << "\n";
     
-    if (!head_id.empty() && (!result.prev_block || result.prev_block->block_id != head_id))
+    if (!result.prev_block || result.prev_block->block_id != head_id)
       throw runtime_error("prev_block does not match");
     
     if (result.block)
