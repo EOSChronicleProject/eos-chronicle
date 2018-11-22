@@ -1,0 +1,6 @@
+[submodule "external/abieos"]
+	path = external/abieos
+	url = https://github.com/EOSIO/abieos.git
+[submodule "external/chainbase"]
+	path = external/chainbase
+	url = https://github.com/eosio/chainbase
