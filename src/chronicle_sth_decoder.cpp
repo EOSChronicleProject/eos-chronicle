@@ -73,10 +73,11 @@ namespace chronicle {
 
   struct by_id;
   struct by_blocknum;
-  
+
+  // this is a singleton
   struct state_object : public chainbase::object<state_table, state_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(state_object);
-    uint32_t    id;
+    id_type     id;
     uint32_t    head;
     checksum256 head_id;
     uint32_t    irreversible;
@@ -86,19 +87,21 @@ namespace chronicle {
   using state_index = chainbase::shared_multi_index_container<
     state_object,
     indexed_by<
-      ordered_unique<tag<by_id>, member<state_object, uint32_t, &state_object::id>>>>;
+      ordered_unique<tag<by_id>, member<state_object, state_object::id_type, &state_object::id>>>>;
 
-
+  // list of received blocks andn their IDs, truncated from head as new blocks are received
   struct received_block_object : public chainbase::object<received_blocks_table, received_block_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(received_block_object);
-    uint32_t block_index;
-    checksum256 block_id;
+    id_type      id;
+    uint32_t     block_index;
+    checksum256  block_id;
   };
 
   using received_block_index = chainbase::shared_multi_index_container<
     received_block_object,
     indexed_by<
-      ordered_unique<tag<by_blocknum>, member<received_block_object, uint32_t, &received_block_object::block_index>>>>;
+      ordered_unique<tag<by_id>, member<received_block_object, received_block_object::id_type, &received_block_object::id>>,
+      ordered_unique<tag<by_blocknum>, BOOST_MULTI_INDEX_MEMBER(received_block_object, uint32_t, block_index)>>>;
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
@@ -181,12 +184,12 @@ struct session : enable_shared_from_this<session> {
   
   void load_state() { 
     const auto& idx = db.get_index<chronicle::state_index, chronicle::by_id>();
-    auto state = idx.find(0);
-    if( state != idx.end() ) {
-      head = state->head;
-      head_id = state->head_id;
-      irreversible = state->irreversible;
-      irreversible_id = state->irreversible_id;
+    auto itr = idx.begin();
+    if( itr != idx.end() ) {
+      head = itr->head;
+      head_id = itr->head_id;
+      irreversible = itr->irreversible;
+      irreversible_id = itr->irreversible_id;
     }
     else {
       head = 0;
@@ -199,9 +202,9 @@ struct session : enable_shared_from_this<session> {
   
   void save_state() {
     const auto& idx = db.get_index<chronicle::state_index, chronicle::by_id>();
-    auto state = idx.find(0);
-    if( state != idx.end() ) {
-      db.modify( state, [&]( chronicle::state_object& o ) {
+    auto itr = idx.begin();
+    if( itr != idx.end() ) {
+      db.modify( *itr, [&]( chronicle::state_object& o ) {
           o.head = head;
           o.head_id = head_id;
           o.irreversible = irreversible;
@@ -298,7 +301,7 @@ struct session : enable_shared_from_this<session> {
     log_time();
     cerr << "block " << result.this_block->block_num << "\n";
     
-    if (!result.prev_block || result.prev_block->block_id != head_id)
+    if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
       throw runtime_error("prev_block does not match");
     
     if (result.block)
@@ -325,7 +328,7 @@ struct session : enable_shared_from_this<session> {
     if (!bin_to_native(block, bin))
       throw runtime_error("block conversion error");
 
-    cout << "Block: " << block_index << "\n";
+    std::cout << "Block: " << block_index << "\n";
   } // receive_block
 
   
@@ -354,7 +357,7 @@ struct session : enable_shared_from_this<session> {
       numRows += table_delta.rows.size();
     }
 
-    cout << "Deltas: " << numRows << "rows\n";
+    std::cout << "Deltas: " << numRows << "rows\n";
   } // receive_deltas
 
   
