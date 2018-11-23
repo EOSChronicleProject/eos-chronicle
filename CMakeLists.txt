@@ -17,7 +17,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-
 add_subdirectory(external/abieos)
 add_subdirectory(external/chainbase)
 
@@ -29,7 +28,7 @@ target_include_directories(chronicle_sth_decoder
 
 target_link_libraries(chronicle_sth_decoder
   PRIVATE abieos chainbase
-  PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options -lpthread)
+  PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z -lpthread)
 
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
