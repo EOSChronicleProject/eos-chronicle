@@ -507,12 +507,15 @@ int main(int argc, char** argv) {
 
     if (vm.count("help"))
       std::cout << desc << '\n';
+    else if (!vm.count("data-dir")){
+      std::cout << "Missing mandatory --data-dir\n" << desc << '\n';
+    }
     else {
       asio::io_context ioc;
       auto s = make_shared<session>(
                                     ioc, vm["host"].as<string>(), vm["port"].as<string>(),
                                     vm.count("skip-to") ? vm["skip-to"].as<uint32_t>() : 0,
-                                    vm["data-dir"].as<string>(), vm["db-size"].as<uint32_t>());
+                                    vm["data-dir"].as<string>(), 1024*1024*vm["db-size"].as<uint32_t>());
       cerr.imbue(std::locale(""));
       s->start();
       ioc.run();
