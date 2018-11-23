@@ -21,19 +21,22 @@ set(CMAKE_BUILD_TYPE Debug)
 
 add_subdirectory(external/abieos)
 add_subdirectory(external/chainbase)
+add_subdirectory(external/appbase)
+add_subdirectory(external/fc)
 
-add_executable(chronicle_sth_decoder src/chronicle_sth_decoder.cpp)
+add_executable(chronicle-receiver chronicle-receiver/main.cpp chronicle-receiver/receiver_plugin.cpp)
 
-target_include_directories(chronicle_sth_decoder
-  PUBLIC external/abieos/src external/abieos/external/rapidjson/include external/chainbase/include
+target_include_directories(chronicle-receiver
+  PUBLIC external/abieos/src external/abieos/external/rapidjson/include external/fc/include
+  external/chainbase/include external/fc/include
   PRIVATE ${Boost_INCLUDE_DIR})
 
-target_link_libraries(chronicle_sth_decoder
-  PRIVATE abieos chainbase
-  PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z -lpthread)
+target_link_libraries(chronicle-receiver
+  PRIVATE abieos chainbase appbase
+  PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z pthread)
 
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(chronicle_sth_decoder PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
+    target_compile_options(chronicle-receiver PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
 endif()
 

@@ -1,7 +1,8 @@
 // copyright defined in LICENSE.txt
 
-#include "abieos.hpp"
-#include "chainbase/chainbase.hpp"
+#include "receiver_plugin.hpp"
+#include <abieos.hpp>
+#include <chainbase/chainbase.hpp>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -15,6 +16,7 @@
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/program_options.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -23,11 +25,11 @@
 #include <string>
 #include <string_view>
 
-
-struct by_id;
-
+#include <fc/exception/exception.hpp>
+#include <fc/log/appender.hpp>
 
 using namespace abieos;
+using namespace appbase;
 using namespace std::literals;
 
 using std::cerr;
@@ -108,8 +110,6 @@ CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
 
 
-
-
 std::vector<char> zlib_decompress(input_buffer data) {
   std::vector<char>      out;
   bio::filtering_ostream decomp;
@@ -121,18 +121,18 @@ std::vector<char> zlib_decompress(input_buffer data) {
 }
 
 
-void log_time() {
-  auto n = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-  cerr << std::put_time(std::localtime(&n), "%F %T: ");
-}
 
-struct session : enable_shared_from_this<session> {
-  chainbase::database                   db;
-  tcp::resolver                         resolver;
-  websocket::stream<tcp::socket>        stream;
+
+
+class receiver_plugin_impl : std::enable_shared_from_this<receiver_plugin_impl> {
+public:
+  shared_ptr<chainbase::database>       db;
+  shared_ptr<tcp::resolver>             resolver;
+  shared_ptr<websocket::stream<tcp::socket>> stream;
   string                                host;
   string                                port;
-  uint32_t                              skip_to         = 0;
+  uint32_t                              skip_to;
+  
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
   uint32_t                              irreversible    = 0;
@@ -140,38 +140,25 @@ struct session : enable_shared_from_this<session> {
   uint32_t                              first_bulk      = 0;
   abi_def                               abi{};
   map<string, abi_type>                 abi_types;
-
-  explicit session(asio::io_context& ioc, string host, string port, uint32_t skip_to,
-                   string data_dir, uint32_t db_size)
-    : db(data_dir, chainbase::database::read_write, db_size),
-      resolver(ioc), stream(ioc),
-      host(move(host)), port(move(port)),
-      skip_to(skip_to) {
-    stream.binary(true);
-    stream.read_message_max(1024 * 1024 * 1024);
-
-    db.add_index<chronicle::state_index>();
-    db.add_index<chronicle::received_block_index>();
-  }
-
+ 
 
   void start() {
     load_state();
-    resolver.async_resolve
+    resolver->async_resolve
       (host, port,
        [self = shared_from_this(), this](error_code ec, tcp::resolver::results_type results) {
         if (ec)
-          cerr << "during lookup of " << host << " " << port << ": ";
+          std::cerr << "during lookup of " << host << ":" << port << ": " << ec;
         
         callback(ec, "resolve", [&] {
             asio::async_connect
               (
-               stream.next_layer(),
+               stream->next_layer(),
                results.begin(),
                results.end(),
                [self = shared_from_this(), this](error_code ec, auto&) {
                  callback(ec, "connect", [&] {
-                     stream.async_handshake(host, "/", [self = shared_from_this(), this](error_code ec) {
+                     stream->async_handshake(host, "/", [self = shared_from_this(), this](error_code ec) {
                          callback(ec, "handshake", [&] {
                              start_read();
                            });
@@ -183,7 +170,7 @@ struct session : enable_shared_from_this<session> {
   }
   
   void load_state() { 
-    const auto& idx = db.get_index<chronicle::state_index, chronicle::by_id>();
+    const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
     if( itr != idx.end() ) {
       head = itr->head;
@@ -201,10 +188,10 @@ struct session : enable_shared_from_this<session> {
 
   
   void save_state() {
-    const auto& idx = db.get_index<chronicle::state_index, chronicle::by_id>();
+    const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
     if( itr != idx.end() ) {
-      db.modify( *itr, [&]( chronicle::state_object& o ) {
+      db->modify( *itr, [&]( chronicle::state_object& o ) {
           o.head = head;
           o.head_id = head_id;
           o.irreversible = irreversible;
@@ -212,7 +199,7 @@ struct session : enable_shared_from_this<session> {
         });
     }
     else {
-      db.create<chronicle::state_object>( [&]( chronicle::state_object& o ) {
+      db->create<chronicle::state_object>( [&]( chronicle::state_object& o ) {
           o.head = head;
           o.head_id = head_id;
           o.irreversible = irreversible;
@@ -224,7 +211,7 @@ struct session : enable_shared_from_this<session> {
   
   void start_read() {
     auto in_buffer = make_shared<flat_buffer>();
-    stream.async_read(*in_buffer, [self = shared_from_this(), this, in_buffer](error_code ec, size_t) {
+    stream->async_read(*in_buffer, [self = shared_from_this(), this, in_buffer](error_code ec, size_t) {
         callback(ec, "async_read", [&] {
             receive_abi(in_buffer);
             request_blocks();
@@ -235,7 +222,7 @@ struct session : enable_shared_from_this<session> {
 
   void continue_read() {
     auto in_buffer = make_shared<flat_buffer>();
-    stream.async_read(*in_buffer, [self = shared_from_this(), this, in_buffer](error_code ec, size_t) {
+    stream->async_read(*in_buffer, [self = shared_from_this(), this, in_buffer](error_code ec, size_t) {
         callback(ec, "async_read", [&] {
             if (!receive_result(in_buffer))
               return;
@@ -257,7 +244,7 @@ struct session : enable_shared_from_this<session> {
   void request_blocks()
   {
     jarray positions;
-    const auto& idx = db.get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+    const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
     auto itr = idx.lower_bound(irreversible);
     while( itr != idx.end() && itr->block_index <= head ) {
       positions.push_back(jvalue{jobject{
@@ -293,13 +280,11 @@ struct session : enable_shared_from_this<session> {
       return true;
 
     if (result.this_block->block_num <= head) {
-      log_time();
-      cerr << "switch forks at block " << result.this_block->block_num << "\n";
+      std::cerr << "switch forks at block " << result.this_block->block_num;
       // TODO: send fork event
     }
 
-    log_time();
-    cerr << "block " << result.this_block->block_num << "\n";
+    std::cerr << "block " << result.this_block->block_num;
     
     if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
       throw runtime_error("prev_block does not match");
@@ -428,7 +413,7 @@ struct session : enable_shared_from_this<session> {
     if (!json_to_bin(*bin, &get_type("request"), value))
       throw runtime_error("failed to convert during send");
 
-    stream.async_write(asio::buffer(*bin),
+    stream->async_write(asio::buffer(*bin),
                        [self = shared_from_this(), bin, this](error_code ec, size_t) {
                          callback(ec, "async_write", [&] {}); });
   }
@@ -486,43 +471,64 @@ struct session : enable_shared_from_this<session> {
     }
   }
 
-  void close() { stream.next_layer().close(); }
-}; // session
-
-
-int main(int argc, char** argv) {
-  try {
-    bpo::options_description desc{"Options"};
-    auto op = desc.add_options();
-    op("help,h", "Help screen");
-    op("host,H", bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)");
-    op("port,p", bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)");
-    op("skip-to,k", bpo::value<uint32_t>(), "Skip blocks before [arg]");
-    op("data-dir", bpo::value<string>(), "decoder state database directory");
-    op("db-size", bpo::value<uint32_t>()->default_value(1024), "database size in MB");
-
-    bpo::variables_map vm;
-    bpo::store(bpo::parse_command_line(argc, argv, desc), vm);
-    bpo::notify(vm);
-
-    if (vm.count("help"))
-      std::cout << desc << '\n';
-    else if (!vm.count("data-dir")){
-      std::cout << "Missing mandatory --data-dir\n" << desc << '\n';
-    }
-    else {
-      asio::io_context ioc;
-      auto s = make_shared<session>(
-                                    ioc, vm["host"].as<string>(), vm["port"].as<string>(),
-                                    vm.count("skip-to") ? vm["skip-to"].as<uint32_t>() : 0,
-                                    vm["data-dir"].as<string>(), 1024*1024*vm["db-size"].as<uint32_t>());
-      cerr.imbue(std::locale(""));
-      s->start();
-      ioc.run();
-    }
-    return 0;
-  } catch (const std::exception& e) {
-    std::cerr << "error: " << e.what() << '\n';
-    return 1;
+  void close() {
+    stream->next_layer().close();
   }
-} // main
+};
+
+
+
+receiver_plugin::receiver_plugin() :my(new receiver_plugin_impl){
+};
+
+receiver_plugin::~receiver_plugin(){
+};
+
+
+void receiver_plugin::set_program_options( options_description& cli, options_description& cfg ) {
+  cfg.add_options()
+    ("host", bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)")
+    ("port", bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
+    ("skip-to", bpo::value<uint32_t>()->default_value(0), "Skip blocks before [arg]")
+    ("receiver-state-db-size", bpo::value<uint32_t>()->default_value(1024), "database size in MB")
+    ;
+}
+
+  
+void receiver_plugin::plugin_initialize( const variables_map& options ) {
+  try {
+    if( !options.count("data-dir") ) {
+      throw std::runtime_error("--data-dir option is required");
+    }
+    
+    my->db = std::make_shared<chainbase::database>
+      (options.at("data-dir").as<string>() + "/receiver-state",
+       chainbase::database::read_write,
+       options.at("receiver-state-db-size").as<uint32_t>() * 1024*1024);
+    my->db->add_index<chronicle::state_index>();
+    my->db->add_index<chronicle::received_block_index>();
+    
+    my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
+    
+    my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
+    my->stream->binary(true);
+    my->stream->read_message_max(1024 * 1024 * 1024);
+    
+    my->host = options.at("host").as<string>();
+    my->port = options.at("port").as<string>();
+    my->skip_to = options.at("skip-to").as<uint32_t>();
+    
+    std::cerr << "initialized receiver_plugin";
+  } FC_LOG_AND_RETHROW();
+}
+
+
+void receiver_plugin::plugin_startup(){
+  my->start();
+  std::cerr << "started receiver_plugin";
+}
+
+void receiver_plugin::plugin_shutdown() {
+  std::cerr << "receiver_plugin stopped";
+}
+
