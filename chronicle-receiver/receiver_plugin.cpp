@@ -25,8 +25,7 @@
 #include <string>
 #include <string_view>
 
-#include <fc/exception/exception.hpp>
-#include <fc/log/appender.hpp>
+
 
 using namespace abieos;
 using namespace appbase;
@@ -146,7 +145,7 @@ public:
     load_state();
     resolver->async_resolve
       (host, port,
-       [self = shared_from_this(), this](error_code ec, tcp::resolver::results_type results) {
+       [this](error_code ec, tcp::resolver::results_type results) {
         if (ec)
           std::cerr << "during lookup of " << host << ":" << port << ": " << ec;
         
@@ -156,9 +155,9 @@ public:
                stream->next_layer(),
                results.begin(),
                results.end(),
-               [self = shared_from_this(), this](error_code ec, auto&) {
+               [this](error_code ec, auto&) {
                  callback(ec, "connect", [&] {
-                     stream->async_handshake(host, "/", [self = shared_from_this(), this](error_code ec) {
+                     stream->async_handshake(host, "/", [this](error_code ec) {
                          callback(ec, "handshake", [&] {
                              start_read();
                            });
@@ -211,7 +210,7 @@ public:
   
   void start_read() {
     auto in_buffer = make_shared<flat_buffer>();
-    stream->async_read(*in_buffer, [self = shared_from_this(), this, in_buffer](error_code ec, size_t) {
+    stream->async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
         callback(ec, "async_read", [&] {
             receive_abi(in_buffer);
             request_blocks();
@@ -222,7 +221,7 @@ public:
 
   void continue_read() {
     auto in_buffer = make_shared<flat_buffer>();
-    stream->async_read(*in_buffer, [self = shared_from_this(), this, in_buffer](error_code ec, size_t) {
+    stream->async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
         callback(ec, "async_read", [&] {
             if (!receive_result(in_buffer))
               return;
@@ -284,7 +283,7 @@ public:
       // TODO: send fork event
     }
 
-    std::cerr << "block " << result.this_block->block_num;
+    std::cerr << "block " << result.this_block->block_num <<"\n";
     
     if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
       throw runtime_error("prev_block does not match");
@@ -414,7 +413,7 @@ public:
       throw runtime_error("failed to convert during send");
 
     stream->async_write(asio::buffer(*bin),
-                       [self = shared_from_this(), bin, this](error_code ec, size_t) {
+                       [bin, this](error_code ec, size_t) {
                          callback(ec, "async_write", [&] {}); });
   }
 
@@ -518,17 +517,26 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->port = options.at("port").as<string>();
     my->skip_to = options.at("skip-to").as<uint32_t>();
     
-    std::cerr << "initialized receiver_plugin";
-  } FC_LOG_AND_RETHROW();
+    std::cerr << "initialized receiver_plugin\n";
+  } catch ( const boost::exception& e ) {
+    std::cerr << boost::diagnostic_information(e) << "\n";
+    throw;
+  } catch ( const std::exception& e ) {
+    std::cerr << e.what() << "\n";
+    throw;
+  } catch ( ... ) {
+    std::cerr << "unknown exception\n";
+    throw;
+  }
 }
 
 
 void receiver_plugin::plugin_startup(){
   my->start();
-  std::cerr << "started receiver_plugin";
+  std::cerr << "started receiver_plugin\n";
 }
 
 void receiver_plugin::plugin_shutdown() {
-  std::cerr << "receiver_plugin stopped";
+  std::cerr << "receiver_plugin stopped\n";
 }
 

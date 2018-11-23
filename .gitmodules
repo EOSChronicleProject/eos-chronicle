@@ -4,9 +4,6 @@
 [submodule "external/chainbase"]
 	path = external/chainbase
 	url = https://github.com/eosio/chainbase
-[submodule "appbase"]
-	path = appbase
-	url = https://github.com/EOSIO/appbase.git
 [submodule "external/appbase"]
 	path = external/appbase
 	url = https://github.com/eosio/appbase

@@ -22,13 +22,12 @@ set(CMAKE_BUILD_TYPE Debug)
 add_subdirectory(external/abieos)
 add_subdirectory(external/chainbase)
 add_subdirectory(external/appbase)
-add_subdirectory(external/fc)
 
 add_executable(chronicle-receiver chronicle-receiver/main.cpp chronicle-receiver/receiver_plugin.cpp)
 
 target_include_directories(chronicle-receiver
-  PUBLIC external/abieos/src external/abieos/external/rapidjson/include external/fc/include
-  external/chainbase/include external/fc/include
+  PUBLIC external/abieos/src external/abieos/external/rapidjson/include 
+  external/chainbase/include 
   PRIVATE ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver
