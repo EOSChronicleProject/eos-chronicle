@@ -1,7 +1,6 @@
 // copyright defined in LICENSE.txt
 
 #include "receiver_plugin.hpp"
-#include <abieos.hpp>
 #include <chainbase/chainbase.hpp>
 
 #include <boost/multi_index_container.hpp>
@@ -21,8 +20,8 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
-#include <memory>
 #include <string>
+#include <memory>
 #include <string_view>
 
 
@@ -30,6 +29,7 @@
 using namespace abieos;
 using namespace appbase;
 using namespace std::literals;
+using namespace chain_state;
 
 using std::cerr;
 using std::enable_shared_from_this;
@@ -45,7 +45,6 @@ using std::shared_ptr;
 using std::string;
 using std::string_view;
 using std::to_string;
-using std::unique_ptr;
 using std::variant;
 using std::vector;
 
@@ -58,7 +57,6 @@ using asio::ip::tcp;
 using boost::beast::flat_buffer;
 using boost::system::error_code;
 
-#include "state_history_client.hpp"
 
 
 // decoder state database objects
@@ -280,7 +278,7 @@ public:
 
     if (result.this_block->block_num <= head) {
       std::cerr << "switch forks at block " << result.this_block->block_num;
-      // TODO: send fork event
+      app().get_channel<chronicle::channels::forks>().publish(result.this_block->block_num);
     }
 
     std::cerr << "block " << result.this_block->block_num <<"\n";
@@ -308,11 +306,10 @@ public:
   
   void
   receive_block(uint32_t block_index, const checksum256& block_id, input_buffer bin) {
-    signed_block block;
-    if (!bin_to_native(block, bin))
+    std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
+    if (!bin_to_native(*block_ptr, bin))
       throw runtime_error("block conversion error");
-
-    std::cout << "Block: " << block_index << "\n";
+    app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
   } // receive_block
 
   
@@ -321,27 +318,27 @@ public:
     input_buffer bin{data.data(), data.data() + data.size()};
 
     auto     num     = read_varuint32(bin);
-    unsigned numRows = 0;
     for (uint32_t i = 0; i < num; ++i) {
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
-      table_delta_v0 table_delta;
-      if (!bin_to_native(table_delta, bin))
+
+      std::shared_ptr<chronicle::channels::block_table_delta> bltd =
+        std::make_shared<chronicle::channels::block_table_delta>();
+
+      if (!bin_to_native(bltd->table_delta, bin))
         throw runtime_error("table_delta conversion error (1)");
 
-      auto& variant_type = get_type(table_delta.name);
+      auto& variant_type = get_type(bltd->table_delta.name);
       if (!variant_type.filled_variant || variant_type.fields.size() != 1 || !variant_type.fields[0].type->filled_struct)
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
       auto& type = *variant_type.fields[0].type;
 
       size_t num_processed = 0;
-      for (auto& row : table_delta.rows) {
+      for (auto& row : bltd->table_delta.rows) {
         check_variant(row.data, variant_type, 0u);
-        // TODO: send out deltas
       }
-      numRows += table_delta.rows.size();
-    }
 
-    std::cout << "Deltas: " << numRows << "rows\n";
+      app().get_channel<chronicle::channels::block_table_deltas>().publish(bltd);
+    }
   } // receive_deltas
 
   
