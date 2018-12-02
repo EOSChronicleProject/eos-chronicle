@@ -3,7 +3,10 @@
 
 using namespace appbase;
 
-namespace chronicle {  
+namespace chronicle {
+
+  // Channels published by receiver_plugin
+
   namespace channels {
     using forks     = channel_decl<struct forks_tag, uint32_t>;
     using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<chain_state::signed_block>>;
@@ -33,12 +36,6 @@ public:
   void plugin_initialize(const variables_map& options);
   void plugin_startup();
   void plugin_shutdown();
-  
-  // Channels published by receiver_plugin
-  
-  
-
-
   
 private:
   std::unique_ptr<class receiver_plugin_impl> my;

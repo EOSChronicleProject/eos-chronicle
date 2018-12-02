@@ -88,7 +88,7 @@ namespace chronicle {
     indexed_by<
       ordered_unique<tag<by_id>, member<state_object, state_object::id_type, &state_object::id>>>>;
 
-  // list of received blocks andn their IDs, truncated from head as new blocks are received
+  // list of received blocks and their IDs, truncated from head as new blocks are received
   struct received_block_object : public chainbase::object<received_blocks_table, received_block_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(received_block_object);
     id_type      id;
@@ -276,25 +276,48 @@ public:
     if (!result.this_block)
       return true;
 
-    if (result.this_block->block_num <= head) {
-      std::cerr << "switch forks at block " << result.this_block->block_num;
-      app().get_channel<chronicle::channels::forks>().publish(result.this_block->block_num);
+    uint32_t    block_num = result.this_block->block_num;
+    checksum256 block_id = result.this_block->block_id;
+    
+    const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+
+    if (block_num <= head) {
+      std::cerr << "switch forks at block " << block_num;
+
+      // truncate received blocks table
+      auto itr = idx.lower_bound(block_num);
+      while( itr != idx.end() ) {
+        db->remove(*itr);
+        itr = idx.lower_bound(block_num);
+      }
+      
+      app().get_channel<chronicle::channels::forks>().publish(block_num);
     }
 
-    std::cerr << "block " << result.this_block->block_num <<"\n";
+    // add the new block and truncate old blocks up to previously known irreversible
+    db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
+          o.block_index = block_num;
+          o.block_id = block_id;
+        });
+
+    auto itr = idx.begin();
+    while( itr->block_index < irreversible ) {
+      db->remove(*itr);
+      itr = idx.begin();
+    }
     
-    if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
+    if (head > 0 && (!result.prev_block || block_id.value != head_id.value))
       throw runtime_error("prev_block does not match");
     
     if (result.block)
-      receive_block(result.this_block->block_num, result.this_block->block_id, *result.block);
+      receive_block(block_num, block_id, *result.block);
     if (result.deltas)
-      receive_deltas(result.this_block->block_num, *result.deltas);
+      receive_deltas(block_num, *result.deltas);
     if (result.traces)
-      receive_traces(result.this_block->block_num, *result.traces);
+      receive_traces(block_num, *result.traces);
 
-    head            = result.this_block->block_num;
-    head_id         = result.this_block->block_id;
+    head            = block_num;
+    head_id         = block_id;
     irreversible    = result.last_irreversible.block_num;
     irreversible_id = result.last_irreversible.block_id;
 
