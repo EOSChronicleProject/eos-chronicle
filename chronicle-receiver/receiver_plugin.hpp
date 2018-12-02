@@ -5,15 +5,20 @@ using namespace appbase;
 
 namespace chronicle {  
   namespace channels {
-    using namespace chain_state;
     using forks     = channel_decl<struct forks_tag, uint32_t>;
-    using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<signed_block>>;
+    using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<chain_state::signed_block>>;
 
     struct block_table_delta {
-      uint32_t        block_num;
-      table_delta_v0  table_delta;
+      uint32_t                     block_num;
+      chain_state::table_delta_v0  table_delta;
     };
     using block_table_deltas  = channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;
+
+    struct transaction_trace {
+      uint32_t                        block_num;
+      chain_state::transaction_trace  trace;
+    };
+    using transaction_traces = channel_decl<struct transaction_traces_tag, std::shared_ptr<transaction_trace>>;
   }
 }
   

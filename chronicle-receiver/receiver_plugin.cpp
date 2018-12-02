@@ -346,53 +346,15 @@ public:
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
     auto         num = read_varuint32(bin);
+    auto&        channel = app().get_channel<chronicle::channels::transaction_traces>();
+    
     for (uint32_t i = 0; i < num; ++i) {
-      transaction_trace trace;
-      if (!bin_to_native(trace, bin))
+      std::shared_ptr<chronicle::channels::transaction_trace> tr =
+        std::make_shared<chronicle::channels::transaction_trace>();
+      if (!bin_to_native(tr->trace, bin))
         throw runtime_error("transaction_trace conversion error (1)");
-      write_transaction_trace(block_num, trace);
+      channel.publish(tr);
     }
-  }
-
-  
-  void write_transaction_trace(uint32_t block_num, transaction_trace& ttrace) {
-    string id     = ttrace.failed_dtrx_trace.empty() ? "" : string(ttrace.failed_dtrx_trace[0].id);
-    int32_t num_actions = 0;
-    for (auto& atrace : ttrace.action_traces)
-      write_action_trace(block_num, ttrace, num_actions, 0, atrace);
-    if (!ttrace.failed_dtrx_trace.empty()) {
-      auto& child = ttrace.failed_dtrx_trace[0];
-      write_transaction_trace(block_num, child);
-    }
-  } // write_transaction_trace
-
-
-  void write_action_trace(uint32_t block_num, transaction_trace& ttrace, int32_t& num_actions,
-                          int32_t parent_action_index, action_trace& atrace) {
-    const auto action_index = ++num_actions;
-
-    for (auto& child : atrace.inline_traces)
-      write_action_trace(block_num, ttrace, num_actions, action_index, child);
-
-    write_action_trace_subtable("action_trace_authorization", block_num, ttrace, action_index, atrace.authorization);
-    write_action_trace_subtable("action_trace_auth_sequence", block_num, ttrace, action_index, atrace.receipt_auth_sequence);
-    write_action_trace_subtable("action_trace_ram_delta", block_num, ttrace, action_index, atrace.account_ram_deltas);
-  } // write_action_trace
-
-  
-  template <typename T>
-  void write_action_trace_subtable(const std::string& name, uint32_t block_num, transaction_trace& ttrace,
-                                   int32_t action_index, T& objects) {
-    int32_t num = 0;
-    for (auto& obj : objects)
-      write_action_trace_subtable(name, block_num, ttrace, action_index, num, obj);
-  }
-
-  
-  template <typename T>
-  void write_action_trace_subtable(const std::string& name, uint32_t block_num, transaction_trace& ttrace,
-                                   int32_t action_index, int32_t& num, T& obj) {
-    ++num;
   }
 
 
