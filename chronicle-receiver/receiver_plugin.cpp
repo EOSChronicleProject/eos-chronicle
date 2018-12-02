@@ -68,12 +68,15 @@ namespace chronicle {
   enum dbtables {
     state_table,
     received_blocks_table,
+    contract_abi_objects_table
   };
 
   struct by_id;
   struct by_blocknum;
+  struct by_name;
 
-  // this is a singleton
+  // this is a singleton keeping the state of the receiver
+  
   struct state_object : public chainbase::object<state_table, state_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(state_object);
     id_type     id;
@@ -89,11 +92,12 @@ namespace chronicle {
       ordered_unique<tag<by_id>, member<state_object, state_object::id_type, &state_object::id>>>>;
 
   // list of received blocks and their IDs, truncated from head as new blocks are received
+  
   struct received_block_object : public chainbase::object<received_blocks_table, received_block_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(received_block_object);
     id_type      id;
     uint32_t     block_index;
-    checksum256  block_id;
+    checksum256  block_id;    
   };
 
   using received_block_index = chainbase::shared_multi_index_container<
@@ -101,10 +105,32 @@ namespace chronicle {
     indexed_by<
       ordered_unique<tag<by_id>, member<received_block_object, received_block_object::id_type, &received_block_object::id>>,
       ordered_unique<tag<by_blocknum>, BOOST_MULTI_INDEX_MEMBER(received_block_object, uint32_t, block_index)>>>;
+
+  // JSON-encoded ABI for every contract
+
+  struct contract_abi_object : public chainbase::object<contract_abi_objects_table, contract_abi_object> {
+    template<typename Constructor, typename Allocator>
+    contract_abi_object( Constructor&& c, Allocator&& a ) : abi(a) { c(*this); }
+    id_type                   id;
+    uint64_t                  account;
+    chainbase::shared_string  abi;
+
+    void set_abi(const std::vector<char> data) {
+      abi.resize(data.size());
+      abi.insert(data.data(), data.size());
+    }
+  };
+
+  using contract_abi_index = chainbase::shared_multi_index_container<
+    contract_abi_object,
+    indexed_by<
+      ordered_unique<tag<by_id>, member<contract_abi_object, contract_abi_object::id_type, &contract_abi_object::id>>,
+      ordered_unique<tag<by_name>, BOOST_MULTI_INDEX_MEMBER(contract_abi_object, uint64_t, account)>>>;
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
+CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi_index)
 
 
 std::vector<char> zlib_decompress(input_buffer data) {
@@ -137,7 +163,8 @@ public:
   uint32_t                              first_bulk      = 0;
   abi_def                               abi{};
   map<string, abi_type>                 abi_types;
- 
+
+  map<uint64_t, shared_ptr<contract>>   contract_abi_cache; // eventually needs to be replaced with LRU cache
 
   void start() {
     load_state();
@@ -360,10 +387,87 @@ public:
         check_variant(row.data, variant_type, 0u);
       }
 
+      if (bltd->table_delta.name == "account") {
+        // memorize the account ABI
+        for (auto& row : bltd->table_delta.rows) {
+          if (row.present) { // only take new account data
+            account_object acc;
+            if (!bin_to_native(acc, row.data))
+              throw runtime_error("account row conversion error");
+            if( acc.abi.data.size() == 0 ) {
+              clear_contract_abi(acc.name);
+            }
+            else {
+              save_contract_abi(acc.name, acc.abi.data);
+            }
+          }
+        }
+      }
+        
       app().get_channel<chronicle::channels::block_table_deltas>().publish(bltd);
     }
   } // receive_deltas
 
+
+  void clear_contract_abi(name account) {
+    auto cache_itr = contract_abi_cache.find(account.value);
+    if( cache_itr != contract_abi_cache.end() ) {
+      contract_abi_cache.erase(cache_itr);
+    }
+
+    const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+    auto itr = idx.lower_bound(account.value);
+    if( itr->account == account.value ) {
+      db->remove(*itr);
+    }
+  }
+
+
+  void save_contract_abi(name account, std::vector<char> data) {
+    abi_def contract_abi;
+    if (!json_to_native(contract_abi, string_view{(const char*)data.data(), data.size()}))
+      throw runtime_error("contract abi parse error");
+    check_abi_version(contract_abi.version);
+    std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
+    
+    contract_abi_cache.insert_or_assign(account.value, ctr);
+
+    const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+    auto itr = idx.lower_bound(account.value);
+    if( itr != idx.end() && itr->account == account.value ) {
+      db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
+          o.set_abi(data);
+        });
+    }
+    else {
+      db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
+          o.account = account.value;
+          o.set_abi(data);
+        });
+    }
+  }
+
+  
+  std::shared_ptr<contract> get_contract_abi(name account) {
+    auto cache_itr = contract_abi_cache.find(account.value);
+    if( cache_itr != contract_abi_cache.end() )
+      return cache_itr->second;
+    
+    const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+    auto itr = idx.lower_bound(account.value);
+    if( itr != idx.end() && itr->account == account.value ) {
+      abi_def contract_abi;
+      if (!json_to_native(contract_abi, string_view{(const char*)itr->abi.data(), itr->abi.size()}))
+        throw runtime_error("contract abi parse error");
+      check_abi_version(contract_abi.version);
+      std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
+      contract_abi_cache.emplace(account.value, ctr);
+      return ctr;
+    }
+    return nullptr;
+  }
+      
+  
   
   void receive_traces(uint32_t block_num, input_buffer buf) {
     auto         data = zlib_decompress(buf);
@@ -488,6 +592,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
        options.at("receiver-state-db-size").as<uint32_t>() * 1024*1024);
     my->db->add_index<chronicle::state_index>();
     my->db->add_index<chronicle::received_block_index>();
+    my->db->add_index<chronicle::contract_abi_index>();
     
     my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
     

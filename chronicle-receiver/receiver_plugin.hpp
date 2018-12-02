@@ -1,5 +1,5 @@
 #include <appbase/application.hpp>
-#include "chain_state.hpp"
+#include "chain_state_types.hpp"
 
 using namespace appbase;
 
