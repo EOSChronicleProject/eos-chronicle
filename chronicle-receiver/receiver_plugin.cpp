@@ -193,20 +193,16 @@ public:
       });
   }
   
-  void load_state() { 
-    const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
-    auto itr = idx.begin();
-    if( itr != idx.end() ) {
-      head = itr->head;
-      head_id = itr->head_id;
-      irreversible = itr->irreversible;
-      irreversible_id = itr->irreversible_id;
-    }
-    else {
-      head = 0;
-      head_id = {};
-      irreversible = 0;
-      irreversible_id = {};
+  void load_state() {
+    if( skip_to == 0 ) {
+      const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
+      auto itr = idx.begin();
+      if( itr != idx.end() ) {
+        head = itr->head;
+        head_id = itr->head_id;
+        irreversible = itr->irreversible;
+        irreversible_id = itr->irreversible_id;
+      }
     }
   }
 
@@ -306,12 +302,12 @@ public:
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
     
-    const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
-
+    
     if (block_num <= head) {
       std::cerr << "switch forks at block " << block_num;
 
       // truncate received blocks table
+      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
       auto itr = idx.lower_bound(block_num);
       while( itr != idx.end() ) {
         db->remove(*itr);
@@ -321,19 +317,22 @@ public:
       app().get_channel<chronicle::channels::forks>().publish(block_num);
     }
 
-    // add the new block and truncate old blocks up to previously known irreversible
-    db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
+    if( block_num > irreversible ) {
+      // add the new block and truncate old blocks up to previously known irreversible
+      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+      db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
           o.block_index = block_num;
           o.block_id = block_id;
         });
-
-    auto itr = idx.begin();
-    while( itr->block_index < irreversible ) {
-      db->remove(*itr);
-      itr = idx.begin();
+      
+      auto itr = idx.begin();
+      while( itr->block_index < irreversible && itr != idx.end() ) {
+        db->remove(*itr);
+        itr = idx.begin();
+      }
     }
-    
-    if (head > 0 && (!result.prev_block || block_id.value != head_id.value))
+      
+    if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
       throw runtime_error("prev_block does not match");
     
     if (result.block)
@@ -359,6 +358,11 @@ public:
     std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
     if (!bin_to_native(*block_ptr, bin))
       throw runtime_error("block conversion error");
+
+    if (block_index % 1000 == 0) {
+    cerr << "block " << block_index << "\n";
+    }
+    
     app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
   } // receive_block
 
@@ -424,6 +428,7 @@ public:
 
 
   void save_contract_abi(name account, std::vector<char> data) {
+    cerr << "Saving contract ABI for " << (std::string)account << "\n";
     abi_def contract_abi;
     if (!json_to_native(contract_abi, string_view{(const char*)data.data(), data.size()}))
       throw runtime_error("contract abi parse error");
