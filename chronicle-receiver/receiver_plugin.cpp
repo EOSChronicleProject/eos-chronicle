@@ -106,7 +106,7 @@ namespace chronicle {
       ordered_unique<tag<by_id>, member<received_block_object, received_block_object::id_type, &received_block_object::id>>,
       ordered_unique<tag<by_blocknum>, BOOST_MULTI_INDEX_MEMBER(received_block_object, uint32_t, block_index)>>>;
 
-  // JSON-encoded ABI for every contract
+  // serialized binary ABI for every contract
 
   struct contract_abi_object : public chainbase::object<contract_abi_objects_table, contract_abi_object> {
     template<typename Constructor, typename Allocator>
@@ -117,7 +117,7 @@ namespace chronicle {
 
     void set_abi(const std::vector<char> data) {
       abi.resize(data.size());
-      abi.insert(data.data(), data.size());
+      abi.assign(data.data(), data.size());
     }
   };
 
@@ -413,11 +413,16 @@ public:
   } // receive_deltas
 
 
-  void clear_contract_abi(name account) {
+  void clear_contract_abi(name account) {    
     auto cache_itr = contract_abi_cache.find(account.value);
     if( cache_itr != contract_abi_cache.end() ) {
-      contract_abi_cache.erase(cache_itr);
+      if( cache_itr->second == nullptr )
+        return;
     }
+
+    cerr << "Clearing contract ABI for " << (std::string)account << "\n";
+    
+    contract_abi_cache[account.value] = nullptr;
 
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.lower_bound(account.value);
@@ -429,13 +434,16 @@ public:
 
   void save_contract_abi(name account, std::vector<char> data) {
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
-    abi_def contract_abi;
-    if (!json_to_native(contract_abi, string_view{(const char*)data.data(), data.size()}))
-      throw runtime_error("contract abi parse error");
-    check_abi_version(contract_abi.version);
-    std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
     
-    contract_abi_cache.insert_or_assign(account.value, ctr);
+    input_buffer bin{data.data(), data.data() + data.size()};
+    check_abi_version(bin);
+    abi_def contract_abi{};
+    if (!bin_to_native(contract_abi, bin)) {
+      throw runtime_error("contract abi deserialization error");
+    }
+
+    std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
+    contract_abi_cache[account.value] = ctr;
 
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.lower_bound(account.value);
@@ -454,21 +462,35 @@ public:
 
   
   std::shared_ptr<contract> get_contract_abi(name account) {
+    cerr << "Retrieving contract ABI for " << (std::string)account << "\n";
+    
     auto cache_itr = contract_abi_cache.find(account.value);
-    if( cache_itr != contract_abi_cache.end() )
+    if( cache_itr != contract_abi_cache.end() ) {
+      if( cache_itr->second == nullptr ) {
+        cerr << "Found NULL in cache\n";
+      }
+      else {
+        cerr << "Found in cache\n";
+      }
       return cache_itr->second;
+    }
     
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.lower_bound(account.value);
     if( itr != idx.end() && itr->account == account.value ) {
-      abi_def contract_abi;
-      if (!json_to_native(contract_abi, string_view{(const char*)itr->abi.data(), itr->abi.size()}))
-        throw runtime_error("contract abi parse error");
-      check_abi_version(contract_abi.version);
+      cerr << "Found in DB\n";
+      input_buffer bin{itr->abi.data(), itr->abi.data()+itr->abi.size()};
+      check_abi_version(bin);
+      abi_def contract_abi{};
+      if (!bin_to_native(contract_abi, bin)) {
+        throw runtime_error("contract abi deserialization error");
+      }      
       std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
-      contract_abi_cache.emplace(account.value, ctr);
+      contract_abi_cache[account.value] = ctr;
       return ctr;
     }
+    cerr << "Not found\n";
+    contract_abi_cache[account.value] = nullptr;
     return nullptr;
   }
       
