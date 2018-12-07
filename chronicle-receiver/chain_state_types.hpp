@@ -352,6 +352,80 @@ namespace chain_state {
     f("code", member_ptr<&account_object::code>{});
     f("abi", member_ptr<&account_object::abi>{});
   }
+
+  // representation of table rows for JSON export
+  
+  struct table_row_colval {
+    string column;
+    string value;
+  };
+  
+  template <typename F>
+  constexpr void for_each_field(struct table_row_colval*, F f) {
+    f("column", member_ptr<&table_row_colval::column>{});
+    f("value", member_ptr<&table_row_colval::value>{});
+  };
+
+  
+  struct table_row {
+    abieos::name   code;
+    abieos::name   scope;
+    abieos::name   table;
+    abieos::name   table_payer;
+    uint64_t       primary_key;
+    abieos::name   row_payer;
+    vector<table_row_colval> columns;
+  };
+
+  template <typename F>
+  constexpr void for_each_field(struct table_row*, F f) {
+    f("code", member_ptr<&table_row::code>{});
+    f("scope", member_ptr<&table_row::scope>{});
+    f("table", member_ptr<&table_row::table>{});
+    f("table_payer", member_ptr<&table_row::table_payer>{});
+    f("primary_key", member_ptr<&table_row::primary_key>{});
+    f("row_payer", member_ptr<&table_row::row_payer>{});
+    f("columns", member_ptr<&table_row::columns>{});
+  };
+
+  
+  // representation of tables and rows for binary decoding
+
+  struct table_id_object {
+    uint64_t       id;
+    abieos::name   code;
+    abieos::name   scope;
+    abieos::name   table;
+    abieos::name   payer;
+    uint32_t       count = 0;
+  };
+
+  template <typename F>
+  constexpr void for_each_field(struct table_id_object*, F f) {
+    f("id", member_ptr<&table_id_object::id>{});
+    f("code", member_ptr<&table_id_object::code>{});
+    f("scope", member_ptr<&table_id_object::scope>{});
+    f("table", member_ptr<&table_id_object::table>{});
+    f("payer", member_ptr<&table_id_object::payer>{});
+    f("count", member_ptr<&table_id_object::count>{});
+  };    
+  
+  struct key_value_object {
+    uint64_t              id;
+    uint64_t              t_id;
+    uint64_t              primary_key;
+    abieos::name          payer;
+    vector<char>          value;
+  };
+
+  template <typename F>
+  constexpr void for_each_field(struct key_value_object*, F f) {
+    f("id", member_ptr<&key_value_object::id>{});
+    f("t_id", member_ptr<&key_value_object::t_id>{});
+    f("primary_key", member_ptr<&key_value_object::primary_key>{});
+    f("payer", member_ptr<&key_value_object::payer>{});
+    f("value", member_ptr<&key_value_object::value>{});
+  };
 }
 
 namespace abieos {

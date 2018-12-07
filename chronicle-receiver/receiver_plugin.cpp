@@ -68,13 +68,15 @@ namespace chronicle {
   enum dbtables {
     state_table,
     received_blocks_table,
-    contract_abi_objects_table
+    contract_abi_objects_table,
+    table_id_object_table
   };
 
   struct by_id;
   struct by_blocknum;
   struct by_name;
-
+  struct by_tid;
+  
   // this is a singleton keeping the state of the receiver
   
   struct state_object : public chainbase::object<state_table, state_object>  {
@@ -126,11 +128,30 @@ namespace chronicle {
     indexed_by<
       ordered_unique<tag<by_id>, member<contract_abi_object, contract_abi_object::id_type, &contract_abi_object::id>>,
       ordered_unique<tag<by_name>, BOOST_MULTI_INDEX_MEMBER(contract_abi_object, uint64_t, account)>>>;
+
+  // mapping of table ID to contract, table name and scope
+  
+  struct table_id_object : public chainbase::object<table_id_object_table, table_id_object> {
+    CHAINBASE_DEFAULT_CONSTRUCTOR(table_id_object)
+    id_type        id;
+    uint64_t       t_id;
+    abieos::name   code;
+    abieos::name   scope;
+    abieos::name   table;
+    abieos::name   payer;
+  };
+
+  using table_id_index = chainbase::shared_multi_index_container<
+    table_id_object,
+    indexed_by<
+      ordered_unique<tag<by_id>, member<table_id_object, table_id_object::id_type, &table_id_object::id>>,
+      ordered_unique<tag<by_tid>, BOOST_MULTI_INDEX_MEMBER(table_id_object, uint64_t, t_id)>>>;
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi_index)
+CHAINBASE_SET_INDEX_TYPE(chronicle::table_id_object, chronicle::table_id_index)
 
 
 std::vector<char> zlib_decompress(input_buffer data) {
@@ -366,6 +387,7 @@ public:
     app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
   } // receive_block
 
+
   
   void receive_deltas(uint32_t block_num, input_buffer buf) {
     auto         data = zlib_decompress(buf);
@@ -391,10 +413,9 @@ public:
         check_variant(row.data, variant_type, 0u);
       }
 
-      if (bltd->table_delta.name == "account") {
-        // memorize the account ABI
+      if (bltd->table_delta.name == "account") {  // memorize contract ABI
         for (auto& row : bltd->table_delta.rows) {
-          if (row.present) { // only take new account data
+          if (row.present) {
             account_object acc;
             if (!bin_to_native(acc, row.data))
               throw runtime_error("account row conversion error");
@@ -407,7 +428,39 @@ public:
           }
         }
       }
-        
+      else if (bltd->table_delta.name == "contract_table") {
+        const auto& idx = db->get_index<chronicle::table_id_index, chronicle::by_tid>();
+        for (auto& row : bltd->table_delta.rows) {
+          table_id_object tio;
+          if (!bin_to_native(tio, row.data))
+            throw runtime_error("cannot read table ID object");
+          auto itr = idx.find(tio.id);
+          if( itr != idx.end() ) {
+            if (row.present) {
+              throw runtime_error("this TID is already seen");
+            }
+            else {
+              cerr << "Deleted table ID for " << (std::string)tio.code << ", scope=" << (std::string)tio.scope <<
+                ", table=" << (std::string)tio.table <<"\n";
+              db->remove(*itr);
+            }
+          }
+          else {
+            if (row.present) {
+              cerr << "New table ID for " << (std::string)tio.code << ", scope=" << (std::string)tio.scope <<
+                ", table=" << (std::string)tio.table <<"\n";
+              db->create<chronicle::table_id_object>( [&]( chronicle::table_id_object& o ) {
+                  o.t_id = tio.id;
+                  o.code = tio.code;
+                  o.scope = tio.scope;
+                  o.table = tio.table;
+                  o.payer = tio.payer;
+                });
+            }
+          }
+        }
+      }        
+
       app().get_channel<chronicle::channels::block_table_deltas>().publish(bltd);
     }
   } // receive_deltas
@@ -425,8 +478,8 @@ public:
     contract_abi_cache[account.value] = nullptr;
 
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-    auto itr = idx.lower_bound(account.value);
-    if( itr->account == account.value ) {
+    auto itr = idx.find(account.value);
+    if( itr != idx.end() ) {
       db->remove(*itr);
     }
   }
@@ -446,8 +499,8 @@ public:
     contract_abi_cache[account.value] = ctr;
 
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-    auto itr = idx.lower_bound(account.value);
-    if( itr != idx.end() && itr->account == account.value ) {
+    auto itr = idx.find(account.value);
+    if( itr != idx.end() ) {
       db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
           o.set_abi(data);
         });
@@ -476,8 +529,8 @@ public:
     }
     
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-    auto itr = idx.lower_bound(account.value);
-    if( itr != idx.end() && itr->account == account.value ) {
+    auto itr = idx.find(account.value);
+    if( itr != idx.end() ) {
       cerr << "Found in DB\n";
       input_buffer bin{itr->abi.data(), itr->abi.data()+itr->abi.size()};
       check_abi_version(bin);
@@ -493,7 +546,6 @@ public:
     contract_abi_cache[account.value] = nullptr;
     return nullptr;
   }
-      
   
   
   void receive_traces(uint32_t block_num, input_buffer buf) {
@@ -620,6 +672,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->db->add_index<chronicle::state_index>();
     my->db->add_index<chronicle::received_block_index>();
     my->db->add_index<chronicle::contract_abi_index>();
+    my->db->add_index<chronicle::table_id_index>();
     
     my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
     
