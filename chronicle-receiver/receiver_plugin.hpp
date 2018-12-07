@@ -22,6 +22,20 @@ namespace chronicle {
       chain_state::transaction_trace  trace;
     };
     using transaction_traces = channel_decl<struct transaction_traces_tag, std::shared_ptr<transaction_trace>>;
+
+    struct abi_update {
+      abieos::name                     account;
+      abieos::abi_def                  abi;
+    };
+    using abi_updates = channel_decl<struct abi_updates_tag, std::shared_ptr<abi_update>>;
+    using abi_removals = channel_decl<struct abi_removals_tag, abieos::name>;
+
+    struct table_row_update {
+      bool                               added; // false==removed
+      chain_state::key_value_object      kvo;
+      std::shared_ptr<abieos::contract>  ctr;
+    };
+    using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
   }
 }
   

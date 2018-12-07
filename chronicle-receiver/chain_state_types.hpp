@@ -368,6 +368,7 @@ namespace chain_state {
 
   
   struct table_row {
+    bool           added; // false==removed
     abieos::name   code;
     abieos::name   scope;
     abieos::name   table;
@@ -379,6 +380,7 @@ namespace chain_state {
 
   template <typename F>
   constexpr void for_each_field(struct table_row*, F f) {
+    f("added", member_ptr<&table_row::added>{});
     f("code", member_ptr<&table_row::code>{});
     f("scope", member_ptr<&table_row::scope>{});
     f("table", member_ptr<&table_row::table>{});
@@ -392,27 +394,24 @@ namespace chain_state {
   // representation of tables and rows for binary decoding
 
   struct table_id_object {
-    uint64_t       id;
     abieos::name   code;
     abieos::name   scope;
     abieos::name   table;
     abieos::name   payer;
-    uint32_t       count = 0;
   };
 
   template <typename F>
   constexpr void for_each_field(struct table_id_object*, F f) {
-    f("id", member_ptr<&table_id_object::id>{});
     f("code", member_ptr<&table_id_object::code>{});
     f("scope", member_ptr<&table_id_object::scope>{});
     f("table", member_ptr<&table_id_object::table>{});
     f("payer", member_ptr<&table_id_object::payer>{});
-    f("count", member_ptr<&table_id_object::count>{});
   };    
   
   struct key_value_object {
-    uint64_t              id;
-    uint64_t              t_id;
+    abieos::name          code;
+    abieos::name          scope;
+    abieos::name          table;
     uint64_t              primary_key;
     abieos::name          payer;
     vector<char>          value;
@@ -420,8 +419,9 @@ namespace chain_state {
 
   template <typename F>
   constexpr void for_each_field(struct key_value_object*, F f) {
-    f("id", member_ptr<&key_value_object::id>{});
-    f("t_id", member_ptr<&key_value_object::t_id>{});
+    f("code", member_ptr<&table_id_object::code>{});
+    f("scope", member_ptr<&table_id_object::scope>{});
+    f("table", member_ptr<&table_id_object::table>{});
     f("primary_key", member_ptr<&key_value_object::primary_key>{});
     f("payer", member_ptr<&key_value_object::payer>{});
     f("value", member_ptr<&key_value_object::value>{});

@@ -128,30 +128,11 @@ namespace chronicle {
     indexed_by<
       ordered_unique<tag<by_id>, member<contract_abi_object, contract_abi_object::id_type, &contract_abi_object::id>>,
       ordered_unique<tag<by_name>, BOOST_MULTI_INDEX_MEMBER(contract_abi_object, uint64_t, account)>>>;
-
-  // mapping of table ID to contract, table name and scope
-  
-  struct table_id_object : public chainbase::object<table_id_object_table, table_id_object> {
-    CHAINBASE_DEFAULT_CONSTRUCTOR(table_id_object)
-    id_type        id;
-    uint64_t       t_id;
-    abieos::name   code;
-    abieos::name   scope;
-    abieos::name   table;
-    abieos::name   payer;
-  };
-
-  using table_id_index = chainbase::shared_multi_index_container<
-    table_id_object,
-    indexed_by<
-      ordered_unique<tag<by_id>, member<table_id_object, table_id_object::id_type, &table_id_object::id>>,
-      ordered_unique<tag<by_tid>, BOOST_MULTI_INDEX_MEMBER(table_id_object, uint64_t, t_id)>>>;
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi_index)
-CHAINBASE_SET_INDEX_TYPE(chronicle::table_id_object, chronicle::table_id_index)
 
 
 std::vector<char> zlib_decompress(input_buffer data) {
@@ -428,35 +409,17 @@ public:
           }
         }
       }
-      else if (bltd->table_delta.name == "contract_table") {
-        const auto& idx = db->get_index<chronicle::table_id_index, chronicle::by_tid>();
+      else if (bltd->table_delta.name == "contract_row") {
+        auto& channel = app().get_channel<chronicle::channels::table_row_updates>();
         for (auto& row : bltd->table_delta.rows) {
-          table_id_object tio;
-          if (!bin_to_native(tio, row.data))
-            throw runtime_error("cannot read table ID object");
-          auto itr = idx.find(tio.id);
-          if( itr != idx.end() ) {
-            if (row.present) {
-              throw runtime_error("this TID is already seen");
-            }
-            else {
-              cerr << "Deleted table ID for " << (std::string)tio.code << ", scope=" << (std::string)tio.scope <<
-                ", table=" << (std::string)tio.table <<"\n";
-              db->remove(*itr);
-            }
-          }
-          else {
-            if (row.present) {
-              cerr << "New table ID for " << (std::string)tio.code << ", scope=" << (std::string)tio.scope <<
-                ", table=" << (std::string)tio.table <<"\n";
-              db->create<chronicle::table_id_object>( [&]( chronicle::table_id_object& o ) {
-                  o.t_id = tio.id;
-                  o.code = tio.code;
-                  o.scope = tio.scope;
-                  o.table = tio.table;
-                  o.payer = tio.payer;
-                });
-            }
+          std::shared_ptr<chronicle::channels::table_row_update> tru =
+            std::make_shared<chronicle::channels::table_row_update>();
+          if (!bin_to_native(tru->kvo, row.data))
+            throw runtime_error("cannot read table row object");
+          tru->ctr = get_contract_abi(tru->kvo.code);
+          if( tru->ctr != nullptr ) {
+            tru->added = row.present;
+            channel.publish(tru);
           }
         }
       }        
@@ -481,21 +444,26 @@ public:
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
       db->remove(*itr);
+      app().get_channel<chronicle::channels::abi_removals>().publish(account);
     }
   }
 
 
+  
   void save_contract_abi(name account, std::vector<char> data) {
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
     
     input_buffer bin{data.data(), data.data() + data.size()};
     check_abi_version(bin);
-    abi_def contract_abi{};
-    if (!bin_to_native(contract_abi, bin)) {
+
+    std::shared_ptr<chronicle::channels::abi_update> abiupd =
+      std::make_shared<chronicle::channels::abi_update>();
+
+    if (!bin_to_native(abiupd->abi, bin)) {
       throw runtime_error("contract abi deserialization error");
     }
 
-    std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
+    std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(abiupd->abi));
     contract_abi_cache[account.value] = ctr;
 
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
@@ -511,19 +479,17 @@ public:
           o.set_abi(data);
         });
     }
+    abiupd->account = account;
+    app().get_channel<chronicle::channels::abi_updates>().publish(abiupd);
   }
 
   
   std::shared_ptr<contract> get_contract_abi(name account) {
-    cerr << "Retrieving contract ABI for " << (std::string)account << "\n";
     
     auto cache_itr = contract_abi_cache.find(account.value);
     if( cache_itr != contract_abi_cache.end() ) {
-      if( cache_itr->second == nullptr ) {
-        cerr << "Found NULL in cache\n";
-      }
-      else {
-        cerr << "Found in cache\n";
+      if( cache_itr->second != nullptr ) {
+        cerr << "Found in cache: ABI for " << (std::string)account << "\n";
       }
       return cache_itr->second;
     }
@@ -531,7 +497,7 @@ public:
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
-      cerr << "Found in DB\n";
+      cerr << "Found in DB: ABI for " << (std::string)account << "\n";
       input_buffer bin{itr->abi.data(), itr->abi.data()+itr->abi.size()};
       check_abi_version(bin);
       abi_def contract_abi{};
@@ -542,7 +508,6 @@ public:
       contract_abi_cache[account.value] = ctr;
       return ctr;
     }
-    cerr << "Not found\n";
     contract_abi_cache[account.value] = nullptr;
     return nullptr;
   }
@@ -672,7 +637,6 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->db->add_index<chronicle::state_index>();
     my->db->add_index<chronicle::received_block_index>();
     my->db->add_index<chronicle::contract_abi_index>();
-    my->db->add_index<chronicle::table_id_index>();
     
     my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
     
