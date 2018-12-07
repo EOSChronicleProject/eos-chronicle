@@ -362,7 +362,9 @@ public:
       throw runtime_error("block conversion error");
 
     if (block_index % 1000 == 0) {
-    cerr << "block " << block_index << "\n";
+         uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
+         uint64_t size = db->get_segment_manager()->get_size();
+         cerr << "block " << block_index << " free: " << free_bytes*100/size << "% DB memory\n";
     }
     
     app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
@@ -435,14 +437,13 @@ public:
       if( cache_itr->second == nullptr )
         return;
     }
-
-    cerr << "Clearing contract ABI for " << (std::string)account << "\n";
     
     contract_abi_cache[account.value] = nullptr;
 
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
+      cerr << "Clearing contract ABI for " << (std::string)account << "\n";
       db->remove(*itr);
       app().get_channel<chronicle::channels::abi_removals>().publish(account);
     }
@@ -488,9 +489,6 @@ public:
     
     auto cache_itr = contract_abi_cache.find(account.value);
     if( cache_itr != contract_abi_cache.end() ) {
-      if( cache_itr->second != nullptr ) {
-        cerr << "Found in cache: ABI for " << (std::string)account << "\n";
-      }
       return cache_itr->second;
     }
     
