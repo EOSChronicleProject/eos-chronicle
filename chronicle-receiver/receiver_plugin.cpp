@@ -156,7 +156,7 @@ public:
   shared_ptr<websocket::stream<tcp::socket>> stream;
   string                                host;
   string                                port;
-  uint32_t                              skip_to;
+  uint32_t                              skip_to = 0;
   
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
@@ -194,17 +194,23 @@ public:
           });
       });
   }
+
   
   void load_state() {
-    if( skip_to == 0 ) {
-      const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
-      auto itr = idx.begin();
-      if( itr != idx.end() ) {
-        head = itr->head;
-        head_id = itr->head_id;
-        irreversible = itr->irreversible;
-        irreversible_id = itr->irreversible_id;
+    const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
+    auto itr = idx.begin();
+    if( itr != idx.end() ) {
+      head = itr->head;
+      head_id = itr->head_id;
+      irreversible = itr->irreversible;
+      irreversible_id = itr->irreversible_id;
+    }
+    if( skip_to > 0 ) {
+      if( skip_to <= head ) {
+        throw runtime_error("skip-to is behind the current head");
       }
+      head = 0;
+      head_id = {};
     }
   }
 
@@ -269,15 +275,20 @@ public:
     const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
     auto itr = idx.lower_bound(irreversible);
     while( itr != idx.end() && itr->block_index <= head ) {
+      std::cerr << "Have " << itr->block_index << "\n";
       positions.push_back(jvalue{jobject{
             {{"block_num"s}, {itr->block_index}},
               {{"block_id"s}, {(string)itr->block_id}},
                 }});
+      itr++;
     }
 
+    uint32_t start_block = max(skip_to, head + 1);
+    std::cerr << "Start block: " << start_block << "\n";
+    
     send(jvalue{jarray{{"get_blocks_request_v0"s},
             {jobject{
-                {{"start_block_num"s}, {to_string(max(skip_to, head + 1))}},
+                {{"start_block_num"s}, {to_string(start_block)}},
                   {{"end_block_num"s}, {"4294967295"s}},
                     {{"max_messages_in_flight"s}, {"4294967295"s}},
                       {{"have_positions"s}, {positions}},
@@ -303,11 +314,10 @@ public:
 
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
-    
+    db->set_revision(result.last_irreversible.block_num);
     
     if (block_num <= head) {
-      std::cerr << "switch forks at block " << block_num;
-
+      std::cerr << "fork detected at block " << block_num <<"\n";
       // truncate received blocks table
       const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
       auto itr = idx.lower_bound(block_num);
@@ -315,7 +325,8 @@ public:
         db->remove(*itr);
         itr = idx.lower_bound(block_num);
       }
-      
+      head = 0;
+      head_id = {};
       app().get_channel<chronicle::channels::forks>().publish(block_num);
     }
 
@@ -350,6 +361,7 @@ public:
     irreversible_id = result.last_irreversible.block_id;
 
     save_state();    
+    db->commit(result.last_irreversible.block_num);
     return true;
   }
 
@@ -361,7 +373,7 @@ public:
     if (!bin_to_native(*block_ptr, bin))
       throw runtime_error("block conversion error");
 
-    if (block_index % 1000 == 0) {
+    if (block_index % 100 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
          cerr << "block " << block_index << " free: " << free_bytes*100/size << "% DB memory\n";
