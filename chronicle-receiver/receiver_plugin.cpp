@@ -275,9 +275,8 @@ public:
     const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
     auto itr = idx.lower_bound(irreversible);
     while( itr != idx.end() && itr->block_index <= head ) {
-      std::cerr << "Have " << itr->block_index << "\n";
       positions.push_back(jvalue{jobject{
-            {{"block_num"s}, {itr->block_index}},
+            {{"block_num"s}, {std::to_string(itr->block_index)}},
               {{"block_id"s}, {(string)itr->block_id}},
                 }});
       itr++;
@@ -376,7 +375,7 @@ public:
     if (block_index % 100 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
-         cerr << "block " << block_index << " free: " << free_bytes*100/size << "% DB memory\n";
+         cerr << "block " << block_index << "; free: " << free_bytes*100/size << "% DB memory\n";
     }
     
     app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
