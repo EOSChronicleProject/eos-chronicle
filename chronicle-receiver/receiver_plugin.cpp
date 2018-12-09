@@ -166,7 +166,7 @@ public:
   abi_def                               abi{};
   map<string, abi_type>                 abi_types;
 
-  map<uint64_t, shared_ptr<contract>>   contract_abi_cache; // eventually needs to be replaced with LRU cache
+  map<uint64_t, shared_ptr<contract>>   contract_abi_cache; // Cache is cleared on forks, so it will never grow too high
 
   void start() {
     load_state();
@@ -310,42 +310,63 @@ public:
 
     if (!result.this_block)
       return true;
+      
+    uint32_t    last_irreversoble_num = result.last_irreversible.block_num;
+    if( skip_to > last_irreversoble_num ) {
+      throw runtime_error("skip-to cannot be past irreversible block");
+    }
 
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
-    db->set_revision(result.last_irreversible.block_num);
+
+    bool srart_undo_session = false;
     
-    if (block_num <= head) {
-      std::cerr << "fork detected at block " << block_num <<"\n";
-      // truncate received blocks table
-      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
-      auto itr = idx.lower_bound(block_num);
-      while( itr != idx.end() ) {
-        db->remove(*itr);
-        itr = idx.lower_bound(block_num);
-      }
-      head = 0;
-      head_id = {};
-      app().get_channel<chronicle::channels::forks>().publish(block_num);
+    if( last_irreversoble_num >= block_num ) {
+      db->set_revision(block_num); // we're catching up nehind the irreversible
     }
+    else {
+      // we're at the blockchain head
+      
+      if (block_num <= head) { //received a block that is lower than what we already saw
+        std::cerr << "fork detected at block " << block_num <<"; head=" << head <<"\n";
+        contract_abi_cache.clear();
+        while( db->revision() >= block_num ) {
+          db->undo();
+        }
+        if( db->revision() == -1 ) {
+          throw runtime_error(std::string("Cannot rollback, no undo stack at revision ")+
+                              std::to_string(db->revision()));
+        }
+        app().get_channel<chronicle::channels::forks>().publish(block_num);
+      }
+      else
+        if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
+          throw runtime_error("prev_block does not match");
+
+      srart_undo_session = true;
+    }
+    
+    auto undo_session = db->start_undo_session(srart_undo_session);
 
     if( block_num > irreversible ) {
-      // add the new block and truncate old blocks up to previously known irreversible
+      // add the new block
       const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
       db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
           o.block_index = block_num;
           o.block_id = block_id;
         });
-      
+      // truncate old blocks up to previously known irreversible
       auto itr = idx.begin();
       while( itr->block_index < irreversible && itr != idx.end() ) {
         db->remove(*itr);
         itr = idx.begin();
       }
     }
-      
-    if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
-      throw runtime_error("prev_block does not match");
+
+    head            = block_num;
+    head_id         = block_id;
+    irreversible    = result.last_irreversible.block_num;
+    irreversible_id = result.last_irreversible.block_id;
     
     if (result.block)
       receive_block(block_num, block_id, *result.block);
@@ -354,13 +375,12 @@ public:
     if (result.traces)
       receive_traces(block_num, *result.traces);
 
-    head            = block_num;
-    head_id         = block_id;
-    irreversible    = result.last_irreversible.block_num;
-    irreversible_id = result.last_irreversible.block_id;
+    save_state();
 
-    save_state();    
-    db->commit(result.last_irreversible.block_num);
+    // save a new revision
+    undo_session.push();
+    
+    db->commit(irreversible);
     return true;
   }
 
@@ -372,10 +392,14 @@ public:
     if (!bin_to_native(*block_ptr, bin))
       throw runtime_error("block conversion error");
 
-    if (block_index % 100 == 0) {
+    if( block_index == irreversible ) {
+      cerr << "crossing irreversible block=" << block_index <<"\n";
+    }
+      
+    if (block_index % 1000 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
-         cerr << "block " << block_index << "; free: " << free_bytes*100/size << "% DB memory\n";
+         cerr << "block=" << block_index << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
     }
     
     app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
@@ -496,8 +520,7 @@ public:
   }
 
   
-  std::shared_ptr<contract> get_contract_abi(name account) {
-    
+  std::shared_ptr<contract> get_contract_abi(name account) {    
     auto cache_itr = contract_abi_cache.find(account.value);
     if( cache_itr != contract_abi_cache.end() ) {
       return cache_itr->second;
