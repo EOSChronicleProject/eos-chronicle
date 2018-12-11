@@ -465,6 +465,7 @@ public:
       }
       else if (bltd->table_delta.name == "contract_row") {
         auto& channel = app().get_channel<chronicle::channels::table_row_updates>();
+        auto& errchannel = app().get_channel<chronicle::channels::abi_errors>();
         for (auto& row : bltd->table_delta.rows) {
           std::shared_ptr<chronicle::channels::table_row_update> tru =
             std::make_shared<chronicle::channels::table_row_update>();
@@ -474,6 +475,14 @@ public:
           if( tru->ctr != nullptr ) {
             tru->added = row.present;
             channel.publish(tru);
+          }
+          else {
+            std::shared_ptr<chronicle::channels::abi_error> ae =
+              std::make_shared<chronicle::channels::abi_error>();
+            ae->block_num = head;
+            ae->account = account;
+            ae->error = "cannot decode table delta because of mising ABI";
+            errchannel.publish(ae);
           }
         }
       }        
@@ -537,8 +546,7 @@ public:
       app().get_channel<chronicle::channels::abi_updates>().publish(abiupd);
     }
     catch (const exception& e) {
-      cerr << "ERROR: Cannot deserialize ABI for " << (std::string)account << ": " << e.what() << "\n";
-
+      cerr << "ERROR: Cannot use ABI for " << (std::string)account << ": " << e.what() << "\n";
       std::shared_ptr<chronicle::channels::abi_error> ae =
         std::make_shared<chronicle::channels::abi_error>();
       ae->block_num = head;
