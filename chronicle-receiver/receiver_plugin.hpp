@@ -36,6 +36,14 @@ namespace chronicle {
       std::shared_ptr<abieos::contract>  ctr;
     };
     using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
+
+    struct abi_error {
+      uint32_t                        block_num;
+      abieos::name                    account;
+      string                          error; 
+    };
+    using abi_errors =
+      channel_decl<struct abi_errors_tag, std::shared_ptr<abi_error>>;
   }
 }
   

@@ -174,7 +174,7 @@ public:
       (host, port,
        [this](error_code ec, tcp::resolver::results_type results) {
         if (ec)
-          std::cerr << "during lookup of " << host << ":" << port << ": " << ec;
+          cerr << "during lookup of " << host << ":" << port << ": " << ec;
         
         callback(ec, "resolve", [&] {
             asio::async_connect
@@ -197,6 +197,17 @@ public:
 
   
   void load_state() {
+    bool did_undo = false;
+    {
+      auto &index = db->get_index<chronicle::state_index>();
+      if( index.stack().size() > 0 ) {
+        cerr << "Database has " << index.stack().size() << " uncommitted revisions. Reverting back.\n";
+        while (index.stack().size() > 0)
+          db->undo();
+        did_undo = true;
+      }
+    }
+
     const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
     if( itr != idx.end() ) {
@@ -205,6 +216,12 @@ public:
       irreversible = itr->irreversible;
       irreversible_id = itr->irreversible_id;
     }
+
+    if( did_undo ) {
+      cerr << "Reverted to block=" << head << ", issuing an explicit fork event\n";
+      app().get_channel<chronicle::channels::forks>().publish(head);
+    }
+    
     if( skip_to > 0 ) {
       if( skip_to <= head ) {
         throw runtime_error("skip-to is behind the current head");
@@ -283,7 +300,7 @@ public:
     }
 
     uint32_t start_block = max(skip_to, head + 1);
-    std::cerr << "Start block: " << start_block << "\n";
+    cerr << "Start block: " << start_block << "\n";
     
     send(jvalue{jarray{{"get_blocks_request_v0"s},
             {jobject{
@@ -328,7 +345,7 @@ public:
       // we're at the blockchain head
       
       if (block_num <= head) { //received a block that is lower than what we already saw
-        std::cerr << "fork detected at block " << block_num <<"; head=" << head <<"\n";
+        cerr << "fork detected at block " << block_num <<"; head=" << head <<"\n";
         contract_abi_cache.clear();
         while( db->revision() >= block_num ) {
           db->undo();
@@ -369,11 +386,11 @@ public:
     irreversible_id = result.last_irreversible.block_id;
     
     if (result.block)
-      receive_block(block_num, block_id, *result.block);
+      receive_block(*result.block);
     if (result.deltas)
-      receive_deltas(block_num, *result.deltas);
+      receive_deltas(*result.deltas);
     if (result.traces)
-      receive_traces(block_num, *result.traces);
+      receive_traces(*result.traces);
 
     save_state();
 
@@ -387,19 +404,19 @@ public:
 
   
   void
-  receive_block(uint32_t block_index, const checksum256& block_id, input_buffer bin) {
+  receive_block(input_buffer bin) {
     std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
     if (!bin_to_native(*block_ptr, bin))
       throw runtime_error("block conversion error");
 
-    if( block_index == irreversible ) {
-      cerr << "crossing irreversible block=" << block_index <<"\n";
+    if( head == irreversible ) {
+      cerr << "crossing irreversible block=" << head <<"\n";
     }
       
-    if (block_index % 1000 == 0) {
+    if (head % 1000 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
-         cerr << "block=" << block_index << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
+         cerr << "block=" << head << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
     }
     
     app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
@@ -407,7 +424,7 @@ public:
 
 
   
-  void receive_deltas(uint32_t block_num, input_buffer buf) {
+  void receive_deltas(input_buffer buf) {
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
 
@@ -489,34 +506,46 @@ public:
   void save_contract_abi(name account, std::vector<char> data) {
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
     
-    input_buffer bin{data.data(), data.data() + data.size()};
-    check_abi_version(bin);
-
     std::shared_ptr<chronicle::channels::abi_update> abiupd =
       std::make_shared<chronicle::channels::abi_update>();
 
-    if (!bin_to_native(abiupd->abi, bin)) {
-      throw runtime_error("contract abi deserialization error");
-    }
+    input_buffer bin{data.data(), data.data() + data.size()};
 
-    std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(abiupd->abi));
-    contract_abi_cache[account.value] = ctr;
+    try {
+      check_abi_version(bin);
+      if (!bin_to_native(abiupd->abi, bin)) {
+        throw runtime_error("contract abi deserialization error");
+      }
+      
+      std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(abiupd->abi));
+      contract_abi_cache[account.value] = ctr;
 
-    const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-    auto itr = idx.find(account.value);
-    if( itr != idx.end() ) {
-      db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
-          o.set_abi(data);
-        });
+      const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+      auto itr = idx.find(account.value);
+      if( itr != idx.end() ) {
+        db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
+            o.set_abi(data);
+          });
+      }
+      else {
+        db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
+            o.account = account.value;
+            o.set_abi(data);
+          });
+      }
+      abiupd->account = account;
+      app().get_channel<chronicle::channels::abi_updates>().publish(abiupd);
     }
-    else {
-      db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
-          o.account = account.value;
-          o.set_abi(data);
-        });
+    catch (const exception& e) {
+      cerr << "ERROR: Cannot deserialize ABI for " << (std::string)account << ": " << e.what() << "\n";
+
+      std::shared_ptr<chronicle::channels::abi_error> ae =
+        std::make_shared<chronicle::channels::abi_error>();
+      ae->block_num = head;
+      ae->account = account;
+      ae->error = e.what();
+      app().get_channel<chronicle::channels::abi_errors>().publish(ae);
     }
-    abiupd->account = account;
-    app().get_channel<chronicle::channels::abi_updates>().publish(abiupd);
   }
 
   
@@ -545,7 +574,7 @@ public:
   }
   
   
-  void receive_traces(uint32_t block_num, input_buffer buf) {
+  void receive_traces(input_buffer buf) {
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
     auto         num = read_varuint32(bin);
