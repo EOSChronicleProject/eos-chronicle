@@ -26,7 +26,8 @@ add_subdirectory(external/appbase)
 add_executable(chronicle-receiver
   chronicle-receiver/main.cpp
   chronicle-receiver/chain_state_types.cpp
-  chronicle-receiver/receiver_plugin.cpp)
+  chronicle-receiver/receiver_plugin.cpp
+  chronicle-receiver/decoder_plugin.cpp)
 
 target_include_directories(chronicle-receiver
   PUBLIC external/abieos/src external/abieos/external/rapidjson/include 
