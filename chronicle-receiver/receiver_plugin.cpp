@@ -403,12 +403,7 @@ public:
 
 
   
-  void
-  receive_block(input_buffer bin) {
-    std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
-    if (!bin_to_native(*block_ptr, bin))
-      throw runtime_error("block conversion error");
-
+  void receive_block(input_buffer bin) {
     if( head == irreversible ) {
       cerr << "crossing irreversible block=" << head <<"\n";
     }
@@ -418,8 +413,14 @@ public:
          uint64_t size = db->get_segment_manager()->get_size();
          cerr << "block=" << head << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
     }
-    
-    app().get_channel<chronicle::channels::blocks>().publish(block_ptr);
+
+    auto& channel = app().get_channel<chronicle::channels::blocks>();
+    if (channel.has_subscribers()) {
+      std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
+      if (!bin_to_native(*block_ptr, bin))
+        throw runtime_error("block conversion error");
+      channel.publish(block_ptr);
+    }
   } // receive_block
 
 
@@ -427,17 +428,20 @@ public:
   void receive_deltas(input_buffer buf) {
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
-
+    auto& rowschannel = app().get_channel<chronicle::channels::table_row_updates>();
+    auto& errchannel = app().get_channel<chronicle::channels::abi_errors>();
+    auto& btdchannel = app().get_channel<chronicle::channels::block_table_deltas>();
+    
     auto     num     = read_varuint32(bin);
     for (uint32_t i = 0; i < num; ++i) {
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
-
+      
       std::shared_ptr<chronicle::channels::block_table_delta> bltd =
         std::make_shared<chronicle::channels::block_table_delta>();
-
+      
       if (!bin_to_native(bltd->table_delta, bin))
         throw runtime_error("table_delta conversion error (1)");
-
+      
       auto& variant_type = get_type(bltd->table_delta.name);
       if (!variant_type.filled_variant || variant_type.fields.size() != 1 || !variant_type.fields[0].type->filled_struct)
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
@@ -463,31 +467,31 @@ public:
           }
         }
       }
-      else if (bltd->table_delta.name == "contract_row") {
-        auto& channel = app().get_channel<chronicle::channels::table_row_updates>();
-        auto& errchannel = app().get_channel<chronicle::channels::abi_errors>();
-        for (auto& row : bltd->table_delta.rows) {
-          std::shared_ptr<chronicle::channels::table_row_update> tru =
-            std::make_shared<chronicle::channels::table_row_update>();
-          if (!bin_to_native(tru->kvo, row.data))
-            throw runtime_error("cannot read table row object");
-          tru->ctr = get_contract_abi(tru->kvo.code);
-          if( tru->ctr != nullptr ) {
-            tru->added = row.present;
-            channel.publish(tru);
-          }
-          else {
-            std::shared_ptr<chronicle::channels::abi_error> ae =
-              std::make_shared<chronicle::channels::abi_error>();
-            ae->block_num = head;
-            ae->account = account;
-            ae->error = "cannot decode table delta because of mising ABI";
-            errchannel.publish(ae);
+      else {
+        if (bltd->table_delta.name == "contract_row" && 
+            (rowschannel.has_subscribers() || errchannel.has_subscribers())) {
+          for (auto& row : bltd->table_delta.rows) {
+            std::shared_ptr<chronicle::channels::table_row_update> tru =
+              std::make_shared<chronicle::channels::table_row_update>();
+            if (!bin_to_native(tru->kvo, row.data))
+              throw runtime_error("cannot read table row object");
+            tru->ctr = get_contract_abi(tru->kvo.code);
+            if( tru->ctr != nullptr ) {
+              tru->added = row.present;
+              rowschannel.publish(tru);
+            }
+            else {
+              std::shared_ptr<chronicle::channels::abi_error> ae =
+                std::make_shared<chronicle::channels::abi_error>();
+              ae->block_num = head;
+              ae->account = tru->kvo.code;
+              ae->error = "cannot decode table delta because of mising ABI";
+              errchannel.publish(ae);
+            }
           }
         }
-      }        
-
-      app().get_channel<chronicle::channels::block_table_deltas>().publish(bltd);
+      }
+      btdchannel.publish(bltd);
     }
   } // receive_deltas
 
@@ -583,17 +587,18 @@ public:
   
   
   void receive_traces(input_buffer buf) {
-    auto         data = zlib_decompress(buf);
-    input_buffer bin{data.data(), data.data() + data.size()};
-    auto         num = read_varuint32(bin);
-    auto&        channel = app().get_channel<chronicle::channels::transaction_traces>();
-    
-    for (uint32_t i = 0; i < num; ++i) {
-      std::shared_ptr<chronicle::channels::transaction_trace> tr =
-        std::make_shared<chronicle::channels::transaction_trace>();
-      if (!bin_to_native(tr->trace, bin))
-        throw runtime_error("transaction_trace conversion error (1)");
-      channel.publish(tr);
+    auto& channel = app().get_channel<chronicle::channels::transaction_traces>();
+    if (channel.has_subscribers()) {
+      auto         data = zlib_decompress(buf);
+      input_buffer bin{data.data(), data.data() + data.size()};
+      auto         num = read_varuint32(bin);
+      for (uint32_t i = 0; i < num; ++i) {
+        std::shared_ptr<chronicle::channels::transaction_trace> tr =
+          std::make_shared<chronicle::channels::transaction_trace>();
+        if (!bin_to_native(tr->trace, bin))
+          throw runtime_error("transaction_trace conversion error (1)");
+        channel.publish(tr);
+      }
     }
   }
 

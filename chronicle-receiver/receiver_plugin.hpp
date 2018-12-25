@@ -30,20 +30,19 @@ namespace chronicle {
     using abi_updates = channel_decl<struct abi_updates_tag, std::shared_ptr<abi_update>>;
     using abi_removals = channel_decl<struct abi_removals_tag, abieos::name>;
 
+    struct abi_error {
+      uint32_t                        block_num;
+      abieos::name                    account;
+      string                          error; 
+    };
+    using abi_errors = channel_decl<struct abi_errors_tag, std::shared_ptr<abi_error>>;
+
     struct table_row_update {
       bool                               added; // false==removed
       chain_state::key_value_object      kvo;
       std::shared_ptr<abieos::contract>  ctr;
     };
     using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
-
-    struct abi_error {
-      uint32_t                        block_num;
-      abieos::name                    account;
-      string                          error; 
-    };
-    using abi_errors =
-      channel_decl<struct abi_errors_tag, std::shared_ptr<abi_error>>;
   }
 }
   
