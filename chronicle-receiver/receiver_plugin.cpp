@@ -25,7 +25,6 @@
 #include <string_view>
 
 
-
 using namespace abieos;
 using namespace appbase;
 using namespace std::literals;
@@ -744,4 +743,5 @@ void receiver_plugin::plugin_startup(){
 void receiver_plugin::plugin_shutdown() {
   std::cerr << "receiver_plugin stopped\n";
 }
+
 

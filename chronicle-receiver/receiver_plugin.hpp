@@ -64,3 +64,5 @@ private:
 
 
 
+FC_REFLECT( chronicle::channels::transaction_trace,
+            (block_num)(trace) )

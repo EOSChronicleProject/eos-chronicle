@@ -13,6 +13,11 @@ endif()
 
 FIND_PACKAGE(Boost 1.58 REQUIRED COMPONENTS date_time system iostreams program_options)
 
+# Macros required by external.fc
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/fc/CMakeModules")
+include(SetupTargetMacros)
+
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -22,6 +27,7 @@ set(CMAKE_BUILD_TYPE Debug)
 add_subdirectory(external/abieos)
 add_subdirectory(external/chainbase)
 add_subdirectory(external/appbase)
+add_subdirectory(external/fc)
 
 add_executable(chronicle-receiver
   chronicle-receiver/main.cpp
@@ -31,11 +37,12 @@ add_executable(chronicle-receiver
 
 target_include_directories(chronicle-receiver
   PUBLIC external/abieos/src external/abieos/external/rapidjson/include 
-  external/chainbase/include 
+  external/chainbase/include
+  external/fc/include
   PRIVATE ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver
-  PRIVATE abieos chainbase appbase
+  PRIVATE abieos chainbase appbase fc
   PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z pthread)
 
 

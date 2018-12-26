@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <optional>
 #include <abieos.hpp>
+#include <fc/reflect/variant.hpp>
 
 
 namespace chain_state {
@@ -435,3 +436,7 @@ namespace abieos {
     f("microseconds", member_ptr<&time_point::microseconds>{});
   }
 }
+
+FC_REFLECT( chain_state::transaction_trace,
+            (id)(status)(cpu_usage_us)(net_usage_words)(elapsed)(net_usage)(scheduled)(action_traces)(except)(failed_dtrx_trace) )
+
