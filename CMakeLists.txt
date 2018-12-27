@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.11)
-project(chronicle_sth_decoder VERSION 0.1 LANGUAGES CXX)
+project(eos-chronicle VERSION 0.1 LANGUAGES CXX)
 
 set(default_build_type "Release")
  
@@ -11,9 +11,13 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-FIND_PACKAGE(Boost 1.58 REQUIRED COMPONENTS date_time system iostreams program_options)
 
-# Macros required by external.fc
+include(GNUInstallDirs)
+
+SET(Boost_USE_STATIC_LIBS ON CACHE STRING "ON or OFF")
+FIND_PACKAGE(Boost 1.67 REQUIRED COMPONENTS
+thread unit_test_framework filesystem date_time system iostreams program_options)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/fc/CMakeModules")
 include(SetupTargetMacros)
 
@@ -24,7 +28,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_BUILD_TYPE Debug)
 
-add_subdirectory(external/abieos)
 add_subdirectory(external/chainbase)
 add_subdirectory(external/appbase)
 add_subdirectory(external/fc)
@@ -42,11 +45,10 @@ target_include_directories(chronicle-receiver
   PRIVATE ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver
-  PRIVATE abieos chainbase appbase fc
+  PRIVATE chainbase appbase fc
   PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z pthread)
 
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(chronicle-receiver PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
 endif()
-
