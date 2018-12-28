@@ -19,11 +19,11 @@ namespace chain_state {
 
   enum class transaction_status : uint8_t {
     executed  = 0, // succeed, no error handler executed
-      soft_fail = 1, // objectively failed (not executed), error handler executed
-      hard_fail = 2, // objectively failed and error handler objectively failed thus no state change
-      delayed   = 3, // transaction delayed/deferred/scheduled for future execution
-      expired   = 4, // transaction expired and storage space refuned to user
-      };
+    soft_fail = 1, // objectively failed (not executed), error handler executed
+    hard_fail = 2, // objectively failed and error handler objectively failed thus no state change
+    delayed   = 3, // transaction delayed/deferred/scheduled for future execution
+    expired   = 4, // transaction expired and storage space refuned to user
+  };
 
   string to_string(transaction_status status);
   bool bin_to_native(transaction_status& status, bin_to_native_state& state, bool);
@@ -136,7 +136,7 @@ namespace chain_state {
     abieos::name                       account;
     abieos::name                       name;
     vector<action_trace_authorization> authorization;
-    input_buffer                       data;
+    string                             data;
     bool                               context_free;
     int64_t                            elapsed;
     string                             console;
@@ -437,6 +437,26 @@ namespace abieos {
   }
 }
 
+FC_REFLECT_ENUM( chain_state::transaction_status,
+                 (executed)(soft_fail)(hard_fail)(delayed)(expired) )
+
 FC_REFLECT( chain_state::transaction_trace,
             (id)(status)(cpu_usage_us)(net_usage_words)(elapsed)(net_usage)(scheduled)(action_traces)(except)(failed_dtrx_trace) )
 
+FC_REFLECT_DERIVED( chain_state::recurse_transaction_trace, (chain_state::transaction_trace), )
+
+FC_REFLECT( chain_state::action_trace,
+            (receipt_receiver)(receipt_act_digest)(receipt_global_sequence)(receipt_recv_sequence)(receipt_auth_sequence)
+            (receipt_code_sequence)(receipt_abi_sequence)(account)(name)(authorization)(data)(context_free)(elapsed)(console)
+            (account_ram_deltas)(except)(inline_traces) )
+
+FC_REFLECT_DERIVED( chain_state::recurse_action_trace, (chain_state::action_trace), )
+
+FC_REFLECT( chain_state::action_trace_ram_delta, (account)(delta) )
+FC_REFLECT( chain_state::action_trace_authorization, (actor)(permission) )
+FC_REFLECT( chain_state::action_trace_auth_sequence, (account)(sequence) )
+
+FC_REFLECT( abieos::name, (value) );
+FC_REFLECT( abieos::varuint32, (value) );
+FC_REFLECT( abieos::fixed_binary<32>, (value) );
+FC_REFLECT( std::optional<std::string>,);
