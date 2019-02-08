@@ -41,56 +41,63 @@ public:
   void start() {
     if (_js_forks_chan.has_subscribers()) {
       _forks_subscription =
-        app().get_channel<chronicle::channels::forks>().subscribe([this](uint32_t block_num){
-            on_fork(block_num);
-          });
+        app().get_channel<chronicle::channels::forks>().subscribe
+        ([this](uint32_t block_num){
+          on_fork(block_num);
+        });
     }
     if (_js_blocks_chan.has_subscribers()) {
       _blocks_subscription =
-        app().get_channel<chronicle::channels::blocks>().subscribe([this](std::shared_ptr<chain_state::signed_block> block_ptr){
-            on_block(block_ptr);
-          });
+        app().get_channel<chronicle::channels::blocks>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::block> block_ptr){
+          on_block(block_ptr);
+        });
     }
     if (_js_transaction_traces_chan.has_subscribers()) {
       _transaction_traces_subscription =
-        app().get_channel<chronicle::channels::transaction_traces>().subscribe([this](std::shared_ptr<chronicle::channels::transaction_trace> tr){
-            on_transaction_trace(tr);
-          });
+        app().get_channel<chronicle::channels::transaction_traces>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::transaction_trace> tr){
+          on_transaction_trace(tr);
+        });
     }
     if (_js_abi_updates_chan.has_subscribers()) {
       _abi_updates_subscription =
-        app().get_channel<chronicle::channels::abi_updates>().subscribe([this](std::shared_ptr<chronicle::channels::abi_update> abiupd){
-            on_abi_update(abiupd);
-          });
+        app().get_channel<chronicle::channels::abi_updates>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::abi_update> abiupd){
+          on_abi_update(abiupd);
+        });
     }
     if (_js_abi_removals_chan.has_subscribers()) {
       _abi_removals_subscription =
-        app().get_channel<chronicle::channels::abi_removals>().subscribe([this](abieos::name contract){
-            on_abi_removal(contract);
-          });
+        app().get_channel<chronicle::channels::abi_removals>().subscribe
+        ([this](abieos::name contract){
+          on_abi_removal(contract);
+        });
     }
     if (_js_abi_errors_chan.has_subscribers()) {
       _abi_errors_subscription =
-        app().get_channel<chronicle::channels::abi_errors>().subscribe([this](std::shared_ptr<chronicle::channels::abi_error> abierr){
-            on_abi_error(abierr);
-          });
+        app().get_channel<chronicle::channels::abi_errors>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::abi_error> abierr){
+          on_abi_error(abierr);
+        });
     }
     if (_js_table_row_updates_chan.has_subscribers()) {
       _table_row_updates_subscription =
-        app().get_channel<chronicle::channels::table_row_updates>().subscribe([this](std::shared_ptr<chronicle::channels::table_row_update> trupd){
-            on_table_row_update(trupd);
-          });
+        app().get_channel<chronicle::channels::table_row_updates>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::table_row_update> trupd){
+          on_table_row_update(trupd);
+        });
     }
   }
 
   void on_fork(uint32_t block_num) {
   }
 
-  void on_block(std::shared_ptr<chain_state::signed_block> block_ptr) {
+  void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {
   }
 
-  void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> tr) {
-    string s = fc::json::to_string(tr);
+  void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
+    // string s = fc::json::to_string(tr);
   }
 
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {

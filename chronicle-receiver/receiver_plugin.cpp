@@ -413,14 +413,21 @@ public:
          cerr << "block=" << head << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
     }
 
-    auto& channel = app().get_channel<chronicle::channels::blocks>();
-    if (channel.has_subscribers()) {
+    /*
+      as of now, we don't do anything with raw block data, but we can, if needed:
       std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
       if (!bin_to_native(*block_ptr, bin))
         throw runtime_error("block conversion error");
+    */
+       
+    auto& channel = app().get_channel<chronicle::channels::blocks>();    
+    if (channel.has_subscribers()) {
+      std::shared_ptr<chronicle::channels::block> block_ptr = std::make_shared<chronicle::channels::block>();
+      block_ptr->block_num = head;
+      block_ptr->last_irreversible = irreversible;
       channel.publish(block_ptr);
     }
-  } // receive_block
+  }
 
 
   

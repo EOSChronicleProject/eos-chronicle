@@ -120,7 +120,7 @@ namespace chain_state {
     f("account", member_ptr<&action_trace_ram_delta::account>{});
     f("delta", member_ptr<&action_trace_ram_delta::delta>{});
   }
-
+  
   struct recurse_action_trace;
 
   struct action_trace {
@@ -136,7 +136,7 @@ namespace chain_state {
     abieos::name                       account;
     abieos::name                       name;
     vector<action_trace_authorization> authorization;
-    string                             data;
+    bytes                              data;
     bool                               context_free;
     int64_t                            elapsed;
     string                             console;
@@ -441,13 +441,15 @@ FC_REFLECT_ENUM( chain_state::transaction_status,
                  (executed)(soft_fail)(hard_fail)(delayed)(expired) )
 
 FC_REFLECT( chain_state::transaction_trace,
-            (id)(status)(cpu_usage_us)(net_usage_words)(elapsed)(net_usage)(scheduled)(action_traces)(except)(failed_dtrx_trace) )
+            (id)(status)(cpu_usage_us)(net_usage_words)(elapsed)(net_usage)
+            (scheduled)(action_traces)(except)(failed_dtrx_trace) )
 
 FC_REFLECT_DERIVED( chain_state::recurse_transaction_trace, (chain_state::transaction_trace), )
 
 FC_REFLECT( chain_state::action_trace,
-            (receipt_receiver)(receipt_act_digest)(receipt_global_sequence)(receipt_recv_sequence)(receipt_auth_sequence)
-            (receipt_code_sequence)(receipt_abi_sequence)(account)(name)(authorization)(data)(context_free)(elapsed)(console)
+            (receipt_receiver)(receipt_act_digest)(receipt_global_sequence)(receipt_recv_sequence)
+            (receipt_auth_sequence)(receipt_code_sequence)(receipt_abi_sequence)(account)(name)
+            (authorization)(data)(context_free)(elapsed)(console)
             (account_ram_deltas)(except)(inline_traces) )
 
 FC_REFLECT_DERIVED( chain_state::recurse_action_trace, (chain_state::action_trace), )

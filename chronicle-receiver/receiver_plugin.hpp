@@ -9,13 +9,19 @@ namespace chronicle {
 
   namespace channels {
     using forks     = channel_decl<struct forks_tag, uint32_t>;
-    using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<chain_state::signed_block>>;
+
+    struct block {
+      uint32_t                        block_num;
+      uint32_t                        last_irreversible;
+    };
+    
+    using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<block>>;
 
     struct block_table_delta {
       uint32_t                     block_num;
       chain_state::table_delta_v0  table_delta;
     };
-    using block_table_deltas  = channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;
+    using block_table_deltas  = channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;    
 
     struct transaction_trace {
       uint32_t                        block_num;

@@ -47,8 +47,10 @@ namespace chain_state {
     return bin_to_native(o, state, start);
   }
 
-  bool json_to_native(recurse_transaction_trace& obj, json_to_native_state& state, event_type event, bool start) {
+  bool json_to_native(recurse_transaction_trace& obj, json_to_native_state& state,
+                      event_type event, bool start) {
     transaction_trace& o = obj;
     return json_to_native(o, state, event, start);
   }
+
 }
