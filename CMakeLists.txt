@@ -37,6 +37,7 @@ add_executable(chronicle-receiver
   chronicle-receiver/chain_state_types.cpp
   chronicle-receiver/receiver_plugin.cpp
   chronicle-receiver/decoder_plugin.cpp
+  external/abieos/src/abieos.cpp
 )
 
 target_include_directories(chronicle-receiver

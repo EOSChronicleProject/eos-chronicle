@@ -18,9 +18,6 @@ namespace chain_state {
 
   using namespace abieos;
 
-  // implemented in receiver_plugin.cpp
-  std::shared_ptr<contract> retrieve_contract_abi(name account);
-  
   enum class transaction_status : uint8_t {
     executed  = 0, // succeed, no error handler executed
     soft_fail = 1, // objectively failed (not executed), error handler executed

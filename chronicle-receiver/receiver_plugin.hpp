@@ -1,5 +1,6 @@
 #include <appbase/application.hpp>
 #include "chain_state_types.hpp"
+#include <abieos.h>
 
 using namespace appbase;
 
@@ -55,7 +56,7 @@ namespace chronicle {
 
     struct abi_update {
       abieos::name                     account;
-      abieos::abi_def                  abi;
+      abieos::bytes                    abi;
     };
 
     template <typename F>
@@ -85,8 +86,13 @@ namespace chronicle {
     struct table_row_update {
       bool                               added; // false==removed
       chain_state::key_value_object      kvo;
-      std::shared_ptr<abieos::contract>  ctr;
     };
+
+    template <typename F>
+    constexpr void for_each_field(table_row_update*, F f) {
+      f("added", member_ptr<&table_row_update::added>{});
+      f("kvo", member_ptr<&table_row_update::kvo>{});
+    }
     
     using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
   }
@@ -104,12 +110,10 @@ public:
   void plugin_startup();
   void plugin_shutdown();
 
-  std::shared_ptr<abieos::contract> retrieve_contract_abi(abieos::name account);
+  abieos_context* get_contract_abi_ctxt(abieos::name account);
 private:
   std::unique_ptr<class receiver_plugin_impl> my;
 };
 
 
-
-FC_REFLECT( chronicle::channels::transaction_trace,
-            (block_num)(trace) )
+abieos_context* get_contract_abi_ctxt(abieos::name account);

@@ -36,6 +36,7 @@ using std::exception;
 using std::make_shared;
 using std::make_unique;
 using std::map;
+using std::set;
 using std::max;
 using std::min;
 using std::optional;
@@ -104,7 +105,8 @@ namespace chronicle {
   using received_block_index = chainbase::shared_multi_index_container<
     received_block_object,
     indexed_by<
-      ordered_unique<tag<by_id>, member<received_block_object, received_block_object::id_type, &received_block_object::id>>,
+      ordered_unique<tag<by_id>, member<received_block_object,
+                                        received_block_object::id_type, &received_block_object::id>>,
       ordered_unique<tag<by_blocknum>, BOOST_MULTI_INDEX_MEMBER(received_block_object, uint32_t, block_index)>>>;
 
   // serialized binary ABI for every contract
@@ -125,7 +127,8 @@ namespace chronicle {
   using contract_abi_index = chainbase::shared_multi_index_container<
     contract_abi_object,
     indexed_by<
-      ordered_unique<tag<by_id>, member<contract_abi_object, contract_abi_object::id_type, &contract_abi_object::id>>,
+      ordered_unique<tag<by_id>, member<contract_abi_object,
+                                        contract_abi_object::id_type, &contract_abi_object::id>>,
       ordered_unique<tag<by_name>, BOOST_MULTI_INDEX_MEMBER(contract_abi_object, uint64_t, account)>>>;
 }
 
@@ -162,10 +165,14 @@ public:
   uint32_t                              irreversible    = 0;
   checksum256                           irreversible_id = {};
   uint32_t                              first_bulk      = 0;
-  abi_def                               abi{};
+
+  // needed for decoding state history input
+  abi_def                               abi{};    
   map<string, abi_type>                 abi_types;
 
-  map<uint64_t, shared_ptr<contract>>   contract_abi_cache; // Cache is cleared on forks, so it will never grow too high
+  // The context keeps decoded versions of contract ABI
+  abieos_context*                       contract_abi_ctxt = nullptr;
+  set<uint64_t>                         contract_abi_imported;
 
   void start() {
     load_state();
@@ -228,8 +235,11 @@ public:
       head = 0;
       head_id = {};
     }
+
+    init_contract_abi_ctxt();
   }
 
+  
   
   void save_state() {
     const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
@@ -345,7 +355,7 @@ public:
       
       if (block_num <= head) { //received a block that is lower than what we already saw
         cerr << "fork detected at block " << block_num <<"; head=" << head <<"\n";
-        contract_abi_cache.clear();
+        init_contract_abi_ctxt();
         while( db->revision() >= block_num ) {
           db->undo();
         }
@@ -481,8 +491,7 @@ public:
               std::make_shared<chronicle::channels::table_row_update>();
             if (!bin_to_native(tru->kvo, row.data))
               throw runtime_error("cannot read table row object");
-            tru->ctr = get_contract_abi(tru->kvo.code);
-            if( tru->ctr != nullptr ) {
+            if( get_contract_abi_ready(tru->kvo.code) ) {
               tru->added = row.present;
               rowschannel.publish(tru);
             }
@@ -491,7 +500,7 @@ public:
                 std::make_shared<chronicle::channels::abi_error>();
               ae->block_num = head;
               ae->account = tru->kvo.code;
-              ae->error = "cannot decode table delta because of mising ABI";
+              ae->error = "cannot decode table delta because of missing ABI";
               errchannel.publish(ae);
             }
           }
@@ -502,15 +511,17 @@ public:
   } // receive_deltas
 
 
-  void clear_contract_abi(name account) {    
-    auto cache_itr = contract_abi_cache.find(account.value);
-    if( cache_itr != contract_abi_cache.end() ) {
-      if( cache_itr->second == nullptr )
-        return;
+  void init_contract_abi_ctxt() {
+    if( contract_abi_ctxt ) {
+      abieos_destroy(contract_abi_ctxt);
+      contract_abi_imported.clear();
     }
-    
-    contract_abi_cache[account.value] = nullptr;
+    contract_abi_ctxt = abieos_create();
+  }
 
+  
+  void clear_contract_abi(name account) {    
+    init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
@@ -524,21 +535,10 @@ public:
   
   void save_contract_abi(name account, std::vector<char> data) {
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
-    
-    std::shared_ptr<chronicle::channels::abi_update> abiupd =
-      std::make_shared<chronicle::channels::abi_update>();
-
-    input_buffer bin{data.data(), data.data() + data.size()};
-
     try {
-      check_abi_version(bin);
-      if (!bin_to_native(abiupd->abi, bin)) {
-        throw runtime_error("contract abi deserialization error");
-      }
+      abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size());
+      contract_abi_imported.insert(account.value);
       
-      std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(abiupd->abi));
-      contract_abi_cache[account.value] = ctr;
-
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
       auto itr = idx.find(account.value);
       if( itr != idx.end() ) {
@@ -552,8 +552,15 @@ public:
             o.set_abi(data);
           });
       }
-      abiupd->account = account;
-      app().get_channel<chronicle::channels::abi_updates>().publish(abiupd);
+
+      auto& channel = app().get_channel<chronicle::channels::abi_updates>();
+      if (channel.has_subscribers()) {
+        std::shared_ptr<chronicle::channels::abi_update> abiupd =
+          std::make_shared<chronicle::channels::abi_update>();
+        abiupd->account = account;
+        abiupd->abi = bytes {data};
+        channel.publish(abiupd);
+      }
     }
     catch (const exception& e) {
       cerr << "ERROR: Cannot use ABI for " << (std::string)account << ": " << e.what() << "\n";
@@ -567,28 +574,18 @@ public:
   }
 
   
-  std::shared_ptr<contract> get_contract_abi(name account) {    
-    auto cache_itr = contract_abi_cache.find(account.value);
-    if( cache_itr != contract_abi_cache.end() ) {
-      return cache_itr->second;
-    }
-    
+  bool get_contract_abi_ready(name account) {
+    if( contract_abi_imported.count(account.value) > 0 )
+      return true; // the context has this contract loaded
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
       cerr << "Found in DB: ABI for " << (std::string)account << "\n";
-      input_buffer bin{itr->abi.data(), itr->abi.data()+itr->abi.size()};
-      check_abi_version(bin);
-      abi_def contract_abi{};
-      if (!bin_to_native(contract_abi, bin)) {
-        throw runtime_error("contract abi deserialization error");
-      }      
-      std::shared_ptr<contract> ctr = std::make_shared<contract>(create_contract(contract_abi));
-      contract_abi_cache[account.value] = ctr;
-      return ctr;
+      abieos_set_abi_bin(contract_abi_ctxt, account.value, itr->abi.data(), itr->abi.size());
+      contract_abi_imported.insert(account.value);
+      return true;
     }
-    contract_abi_cache[account.value] = nullptr;
-    return nullptr;
+    return false;
   }
   
   
@@ -753,19 +750,23 @@ void receiver_plugin::plugin_shutdown() {
 }
 
 
-std::shared_ptr<abieos::contract> receiver_plugin::retrieve_contract_abi(abieos::name account) {
-  return my->get_contract_abi(account);
+abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
+  if( my->get_contract_abi_ready(account) ) {
+    return my->contract_abi_ctxt;
+  }
+  return nullptr;
 }
+
 
 // global implementation of ABI retriever
 
 static receiver_plugin* receiver_plug = nullptr;
 
-std::shared_ptr<contract> retrieve_contract_abi(name account) {
+abieos_context* get_contract_abi_ctxt(abieos::name account) {
   if( ! receiver_plug ) {
     receiver_plug = app().find_plugin<receiver_plugin>();
   }
-  return receiver_plug->retrieve_contract_abi(account);
+  return receiver_plug->get_contract_abi_ctxt(account);
 }
 
 
