@@ -603,6 +603,7 @@ public:
           std::make_shared<chronicle::channels::transaction_trace>();
         if (!bin_to_native(tr->trace, bin))
           throw runtime_error("transaction_trace conversion error (1)");
+        tr->block_num = head;
         channel.publish(tr);
       }
     }
@@ -750,5 +751,22 @@ void receiver_plugin::plugin_startup(){
 void receiver_plugin::plugin_shutdown() {
   std::cerr << "receiver_plugin stopped\n";
 }
+
+
+std::shared_ptr<abieos::contract> receiver_plugin::retrieve_contract_abi(abieos::name account) {
+  return my->get_contract_abi(account);
+}
+
+// global implementation of ABI retriever
+
+static receiver_plugin* receiver_plug = nullptr;
+
+std::shared_ptr<contract> retrieve_contract_abi(name account) {
+  if( ! receiver_plug ) {
+    receiver_plug = app().find_plugin<receiver_plugin>();
+  }
+  return receiver_plug->retrieve_contract_abi(account);
+}
+
 
 

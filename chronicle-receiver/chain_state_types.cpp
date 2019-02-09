@@ -52,5 +52,5 @@ namespace chain_state {
     transaction_trace& o = obj;
     return json_to_native(o, state, event, start);
   }
-
+    
 }

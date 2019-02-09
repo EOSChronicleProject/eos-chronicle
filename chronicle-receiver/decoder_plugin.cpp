@@ -97,7 +97,6 @@ public:
   }
 
   void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
-    // string s = fc::json::to_string(tr);
   }
 
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {

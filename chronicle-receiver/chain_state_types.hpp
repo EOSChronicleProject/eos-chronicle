@@ -7,6 +7,7 @@
 #include <fc/reflect/variant.hpp>
 
 
+
 namespace chain_state {
   using std::string;
   using std::variant;
@@ -17,6 +18,9 @@ namespace chain_state {
 
   using namespace abieos;
 
+  // implemented in receiver_plugin.cpp
+  std::shared_ptr<contract> retrieve_contract_abi(name account);
+  
   enum class transaction_status : uint8_t {
     executed  = 0, // succeed, no error handler executed
     soft_fail = 1, // objectively failed (not executed), error handler executed
@@ -172,7 +176,7 @@ namespace chain_state {
 
   bool bin_to_native(recurse_action_trace& obj, bin_to_native_state& state, bool start);
   bool json_to_native(recurse_action_trace& obj, json_to_native_state& state, event_type event, bool start);
-
+  
   struct recurse_transaction_trace;
 
   struct transaction_trace {
@@ -428,6 +432,7 @@ namespace chain_state {
     f("payer", member_ptr<&key_value_object::payer>{});
     f("value", member_ptr<&key_value_object::value>{});
   };
+  
 }
 
 namespace abieos {
@@ -437,28 +442,3 @@ namespace abieos {
   }
 }
 
-FC_REFLECT_ENUM( chain_state::transaction_status,
-                 (executed)(soft_fail)(hard_fail)(delayed)(expired) )
-
-FC_REFLECT( chain_state::transaction_trace,
-            (id)(status)(cpu_usage_us)(net_usage_words)(elapsed)(net_usage)
-            (scheduled)(action_traces)(except)(failed_dtrx_trace) )
-
-FC_REFLECT_DERIVED( chain_state::recurse_transaction_trace, (chain_state::transaction_trace), )
-
-FC_REFLECT( chain_state::action_trace,
-            (receipt_receiver)(receipt_act_digest)(receipt_global_sequence)(receipt_recv_sequence)
-            (receipt_auth_sequence)(receipt_code_sequence)(receipt_abi_sequence)(account)(name)
-            (authorization)(data)(context_free)(elapsed)(console)
-            (account_ram_deltas)(except)(inline_traces) )
-
-FC_REFLECT_DERIVED( chain_state::recurse_action_trace, (chain_state::action_trace), )
-
-FC_REFLECT( chain_state::action_trace_ram_delta, (account)(delta) )
-FC_REFLECT( chain_state::action_trace_authorization, (actor)(permission) )
-FC_REFLECT( chain_state::action_trace_auth_sequence, (account)(sequence) )
-
-FC_REFLECT( abieos::name, (value) );
-FC_REFLECT( abieos::varuint32, (value) );
-FC_REFLECT( abieos::fixed_binary<32>, (value) );
-FC_REFLECT( std::optional<std::string>,);
