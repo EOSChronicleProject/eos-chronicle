@@ -12,7 +12,19 @@ namespace chronicle {
 
     using namespace abieos;
 
-    using forks     = channel_decl<struct forks_tag, uint32_t>;
+
+    struct fork_event {
+      uint32_t    fork_block_num;
+      uint32_t    depth;
+    };
+    
+    template <typename F>
+    constexpr void for_each_field(fork_event*, F f) {
+      f("block_num", member_ptr<&fork_event::fork_block_num>{});
+      f("depth", member_ptr<&fork_event::depth>{});
+    }
+    
+    using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
 
     struct block {
       uint32_t                        block_num;

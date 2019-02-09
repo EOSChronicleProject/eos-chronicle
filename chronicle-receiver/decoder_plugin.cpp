@@ -8,6 +8,94 @@
 #include <fc/io/json.hpp>
 
 
+namespace json_encoder {
+  inline constexpr bool trace_native_to_json = false;
+  
+  struct native_to_json_state : json_reader_handler<native_to_json_state> {
+    rapidjson::Writer<rapidjson::StringBuffer>& writer;
+    
+    native_to_json_state(rapidjson::Writer<rapidjson::StringBuffer>& writer)
+      : writer{writer} {}
+  };
+
+  struct json_serializer {
+    virtual void native_to_json(native_to_json_state& state) const = 0;
+  };
+  
+  template <typename T>
+  struct native_serializer_impl : native_serializer {
+    void native_to_json(native_to_json_state& state) const override {
+      using ::json_encoder::native_to_json;
+      return native_to_json(*reinterpret_cast<T*>(v), state);
+    }
+  }
+  
+  struct json_field_serializer_methods {
+    virtual void native_to_json(native_to_json_state& state) const = 0;
+  };
+  
+  struct json_field_serializer {
+    const json_field_serializer_methods* methods = nullptr;
+  };
+
+  template <typename T>
+  inline constexpr auto json_serializer_for = json_serializer_impl<T>{};
+
+  template <typename member_ptr>
+  constexpr auto create_json_field_serializer_methods_impl() {
+    struct impl : json_field_serializer_methods {
+      void void native_to_json(native_to_json_state& state) const override {
+        using ::json_encoder::native_to_json;
+        return native_to_json(member_from_void(member_ptr{}, v), state);
+      }
+    };
+    return impl{};
+  }
+  
+  template <typename member_ptr>
+  inline constexpr auto field_serializer_methods_for = create_json_field_serializer_methods_impl<member_ptr>();
+  
+  template <typename T>
+  constexpr auto create_json_field_serializers() {
+    constexpr auto num_fields = ([&]() constexpr {
+        int num_fields = 0;
+        for_each_field((T*)nullptr, [&](auto, auto) { ++num_fields; });
+        return num_fields;
+      }());
+    std::array<json_field_serializer, num_fields> fields;
+    int i = 0;
+    for_each_field((T*)nullptr, [&](auto* name, auto member_ptr) {
+        fields[i++] = {name, &field_serializer_methods_for<decltype(member_ptr)>};
+      });
+    return fields;
+  }
+
+  template <typename T>
+  inline constexpr auto json_field_serializers_for = create_json_field_serializers<T>();
+  
+  template <typename T>
+  void native_to_json(T*, native_to_json_state& state) -> std::enable_if_t<std::is_arithmetic_v<T>, bool>;
+
+  inline void native_to_json(std::string* str, native_to_json_state& state) {
+    state.writer.String(str.c_str(), str.size());
+  }
+  
+  inline void native_to_json(bytes v, native_to_json_state& state) {
+    state.writer.String(v.data.c_str(), v.data.size());
+  }
+
+
+  template <typename T>
+  void native_to_json(T* v, std::string& dest) {
+    rapidjson::StringBuffer buffer{};
+    rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
+    native_to_json_state state{writer};
+    native_to_json(v, native_to_json_state);
+    dest = buffer.GetString();
+  }
+
+}
+
 
 class decoder_plugin_impl : std::enable_shared_from_this<decoder_plugin_impl> {
 public:
@@ -42,8 +130,8 @@ public:
     if (_js_forks_chan.has_subscribers()) {
       _forks_subscription =
         app().get_channel<chronicle::channels::forks>().subscribe
-        ([this](uint32_t block_num){
-          on_fork(block_num);
+        ([this](std::shared_ptr<chronicle::channels::fork_event> fe){
+          on_fork(fe);
         });
     }
     if (_js_blocks_chan.has_subscribers()) {
@@ -90,7 +178,9 @@ public:
     }
   }
 
-  void on_fork(uint32_t block_num) {
+  void on_fork(std::shared_ptr<chronicle::channels::fork_event> fe) {
+    
+    _js_forks_chan.publish()
   }
 
   void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {

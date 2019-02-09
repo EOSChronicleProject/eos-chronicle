@@ -204,10 +204,12 @@ public:
   
   void load_state() {
     bool did_undo = false;
+    uint32_t depth;
     {
       auto &index = db->get_index<chronicle::state_index>();
       if( index.stack().size() > 0 ) {
-        cerr << "Database has " << index.stack().size() << " uncommitted revisions. Reverting back.\n";
+        depth = index.stack().size();
+        cerr << "Database has " << depth << " uncommitted revisions. Reverting back.\n";
         while (index.stack().size() > 0)
           db->undo();
         did_undo = true;
@@ -225,7 +227,10 @@ public:
 
     if( did_undo ) {
       cerr << "Reverted to block=" << head << ", issuing an explicit fork event\n";
-      app().get_channel<chronicle::channels::forks>().publish(head);
+      auto fe = std::make_shared<chronicle::channels::fork_event>();
+      fe->fork_block_num = head;
+      fe->depth = depth;
+      app().get_channel<chronicle::channels::forks>().publish(fe);
     }
     
     if( skip_to > 0 ) {
@@ -355,6 +360,7 @@ public:
       
       if (block_num <= head) { //received a block that is lower than what we already saw
         cerr << "fork detected at block " << block_num <<"; head=" << head <<"\n";
+        uint32_t depth = head - block_num;
         init_contract_abi_ctxt();
         while( db->revision() >= block_num ) {
           db->undo();
@@ -363,7 +369,11 @@ public:
           throw runtime_error(std::string("Cannot rollback, no undo stack at revision ")+
                               std::to_string(db->revision()));
         }
-        app().get_channel<chronicle::channels::forks>().publish(block_num);
+
+        auto fe = std::make_shared<chronicle::channels::fork_event>();
+        fe->fork_block_num = block_num;
+        fe->depth = depth;
+        app().get_channel<chronicle::channels::forks>().publish(fe);
       }
       else
         if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
@@ -425,14 +435,14 @@ public:
 
     /*
       as of now, we don't do anything with raw block data, but we can, if needed:
-      std::shared_ptr<signed_block> block_ptr = std::make_shared<signed_block>();
+      auto block_ptr = std::make_shared<signed_block>();
       if (!bin_to_native(*block_ptr, bin))
         throw runtime_error("block conversion error");
     */
        
     auto& channel = app().get_channel<chronicle::channels::blocks>();    
     if (channel.has_subscribers()) {
-      std::shared_ptr<chronicle::channels::block> block_ptr = std::make_shared<chronicle::channels::block>();
+      auto block_ptr = std::make_shared<chronicle::channels::block>();
       block_ptr->block_num = head;
       block_ptr->last_irreversible = irreversible;
       channel.publish(block_ptr);
@@ -452,8 +462,7 @@ public:
     for (uint32_t i = 0; i < num; ++i) {
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
       
-      std::shared_ptr<chronicle::channels::block_table_delta> bltd =
-        std::make_shared<chronicle::channels::block_table_delta>();
+      auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
       
       if (!bin_to_native(bltd->table_delta, bin))
         throw runtime_error("table_delta conversion error (1)");
@@ -487,8 +496,7 @@ public:
         if (bltd->table_delta.name == "contract_row" && 
             (rowschannel.has_subscribers() || errchannel.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
-            std::shared_ptr<chronicle::channels::table_row_update> tru =
-              std::make_shared<chronicle::channels::table_row_update>();
+            auto tru = std::make_shared<chronicle::channels::table_row_update>();
             if (!bin_to_native(tru->kvo, row.data))
               throw runtime_error("cannot read table row object");
             if( get_contract_abi_ready(tru->kvo.code) ) {
@@ -496,8 +504,7 @@ public:
               rowschannel.publish(tru);
             }
             else {
-              std::shared_ptr<chronicle::channels::abi_error> ae =
-                std::make_shared<chronicle::channels::abi_error>();
+              auto ae =  std::make_shared<chronicle::channels::abi_error>();
               ae->block_num = head;
               ae->account = tru->kvo.code;
               ae->error = "cannot decode table delta because of missing ABI";
@@ -555,8 +562,7 @@ public:
 
       auto& channel = app().get_channel<chronicle::channels::abi_updates>();
       if (channel.has_subscribers()) {
-        std::shared_ptr<chronicle::channels::abi_update> abiupd =
-          std::make_shared<chronicle::channels::abi_update>();
+        auto abiupd = std::make_shared<chronicle::channels::abi_update>();
         abiupd->account = account;
         abiupd->abi = bytes {data};
         channel.publish(abiupd);
@@ -564,8 +570,7 @@ public:
     }
     catch (const exception& e) {
       cerr << "ERROR: Cannot use ABI for " << (std::string)account << ": " << e.what() << "\n";
-      std::shared_ptr<chronicle::channels::abi_error> ae =
-        std::make_shared<chronicle::channels::abi_error>();
+      auto ae = std::make_shared<chronicle::channels::abi_error>();
       ae->block_num = head;
       ae->account = account;
       ae->error = e.what();
@@ -596,8 +601,7 @@ public:
       input_buffer bin{data.data(), data.data() + data.size()};
       auto         num = read_varuint32(bin);
       for (uint32_t i = 0; i < num; ++i) {
-        std::shared_ptr<chronicle::channels::transaction_trace> tr =
-          std::make_shared<chronicle::channels::transaction_trace>();
+        auto tr = std::make_shared<chronicle::channels::transaction_trace>();
         if (!bin_to_native(tr->trace, bin))
           throw runtime_error("transaction_trace conversion error (1)");
         tr->block_num = head;
