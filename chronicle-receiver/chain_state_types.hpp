@@ -422,7 +422,7 @@ namespace chain_state {
     abieos::name          table;
     uint64_t              primary_key;
     abieos::name          payer;
-    vector<char>          value;
+    bytes                 value;
   };
 
   template <typename F>

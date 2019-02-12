@@ -163,8 +163,9 @@ namespace json_encoder {
           // encode table row according to ABI
           auto ctxt = get_contract_abi_ctxt(obj.code);
           const string table_name = name_to_string(obj.table.value);
+          std::cerr << "key_value_object: " << name_to_string(obj.code.value) << ":" << table_name <<"\n";
           string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
-                                            obj.value.data(), obj.value.size());
+                                            obj.value.data.data(), obj.value.data.size());
           state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
         }
         else {
@@ -194,11 +195,23 @@ namespace json_encoder {
   
   template <typename T>
   void native_to_json(T& v, std::string& dest) {
-    rapidjson::StringBuffer buffer{};
-    rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
-    native_to_json_state state{writer};
-    native_to_json(v, state);
-    dest = buffer.GetString();
+    try { 
+      rapidjson::StringBuffer buffer{};
+      rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
+      native_to_json_state state{writer};
+      native_to_json(v, state);
+      dest = buffer.GetString();
+    }
+    catch ( const boost::exception& e ) {
+      std::cerr << boost::diagnostic_information(e) << "\n";
+      throw;
+    } catch ( const std::exception& e ) {
+      std::cerr << e.what() << "\n";
+      throw;
+    } catch ( ... ) {
+      std::cerr << "unknown exception\n";
+      throw;
+    }
   }
 }
 
