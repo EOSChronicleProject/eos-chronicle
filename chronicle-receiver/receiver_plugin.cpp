@@ -520,6 +520,7 @@ public:
 
   void init_contract_abi_ctxt() {
     if( contract_abi_ctxt ) {
+      cerr << "Destroying ABI cache\n";
       abieos_destroy(contract_abi_ctxt);
       contract_abi_imported.clear();
     }
@@ -714,7 +715,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     }
     
     my->db = std::make_shared<chainbase::database>
-      (options.at("data-dir").as<string>() + "/receiver-state",
+      (app().data_dir().native() + "/receiver-state",
        chainbase::database::read_write,
        options.at("receiver-state-db-size").as<uint32_t>() * 1024*1024);
     my->db->add_index<chronicle::state_index>();

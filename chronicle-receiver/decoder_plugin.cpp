@@ -32,7 +32,7 @@ namespace json_encoder {
 
   inline void native_to_json(const optional<std::string>& str, native_to_json_state& state) {
     if( str ) {
-      state.writer.String(str.value().c_str(), str.value().size());
+      state.writer.String(str.value().data(), str.value().size());
     }
     else {
       state.writer.String("");
@@ -40,19 +40,23 @@ namespace json_encoder {
   }
   
   inline void arithmetic_to_json(const uint64_t& v, native_to_json_state& state) {
-    state.writer.Uint64(v);
+    string str = to_string(v);
+    state.writer.String(str.data(), str.length());
   }
 
   inline void arithmetic_to_json(const int64_t& v, native_to_json_state& state) {
-    state.writer.Int64(v);
+    string str = to_string(v);
+    state.writer.String(str.data(), str.length());
   }
 
   inline void arithmetic_to_json(const uint32_t& v, native_to_json_state& state) {
-    state.writer.Uint(v);
+    string str = to_string(v);
+    state.writer.String(str.data(), str.length());
   }
 
   inline void arithmetic_to_json(const int32_t& v, native_to_json_state& state) {
-    state.writer.Int(v);
+    string str = to_string(v);
+    state.writer.String(str.data(), str.length());
   }
   
   // These two functions are stolen from native_to_bin branch in abieos and should go away as
@@ -80,7 +84,10 @@ namespace json_encoder {
     state.writer.String(result.c_str(), result.size());
   }
     
-  inline void native_to_json(const name& obj, native_to_json_state& state) { arithmetic_to_json(obj.value, state); }
+  inline void native_to_json(const name& obj, native_to_json_state& state) {
+    std::string result = name_to_string(obj.value);
+    state.writer.String(result.c_str(), result.size());
+  }
   
   inline void native_to_json(const bytes& obj, native_to_json_state& state) {
     std::string result;
@@ -96,7 +103,8 @@ namespace json_encoder {
   }
   
   inline void native_to_json(const bool& obj, native_to_json_state& state) {
-    state.writer.Bool(obj);
+    string str = to_string(obj);
+    state.writer.String(str.data(), str.length());
   }
 
   inline void native_to_json(const varuint32& obj, native_to_json_state& state) {
@@ -104,30 +112,25 @@ namespace json_encoder {
   }
   
   inline void native_to_json(const chain_state::action_trace& obj, native_to_json_state& state) {
-    native_to_json(obj.receipt_receiver, state);
-    native_to_json(obj.receipt_act_digest, state);
-    native_to_json(obj.receipt_global_sequence, state);
-    native_to_json(obj.receipt_recv_sequence, state);
-    native_to_json(obj.receipt_auth_sequence, state);
-    native_to_json(obj.receipt_code_sequence, state);
-    native_to_json(obj.receipt_abi_sequence, state);
-    native_to_json(obj.account, state);
-    native_to_json(obj.name, state);
-    native_to_json(obj.authorization, state);
-
-    // encode action data accordin gto ABI
-    auto ctxt = get_contract_abi_ctxt(obj.account);
-    const string action_name = name_to_string(obj.name.value);
-    string datajs = abieos_bin_to_json(ctxt, obj.account.value, action_name.c_str(),
-                                       obj.data.data.data(), obj.data.data.size());
-    state.writer.RawValue(datajs.c_str(), datajs.size(), rapidjson::kObjectType);
-    
-    native_to_json(obj.context_free, state);
-    native_to_json(obj.elapsed, state);
-    native_to_json(obj.console, state);
-    native_to_json(obj.account_ram_deltas, state);
-    native_to_json(obj.except, state);
-    native_to_json(obj.inline_traces, state);
+    state.writer.StartObject();
+    for_each_field((chain_state::action_trace*)nullptr, [&](auto* name, auto member_ptr) {
+        if( string("dummy") == name || string("receipt_dummy") == name ) {
+          return;
+        }
+        state.writer.Key(name);
+        if( string("data") == name ) {
+          // encode action data according to ABI
+          auto ctxt = get_contract_abi_ctxt(obj.account);
+          const string action_name = name_to_string(obj.name.value);
+          string datajs = abieos_bin_to_json(ctxt, obj.account.value, action_name.c_str(),
+                                             obj.data.data.data(), obj.data.data.size());
+          state.writer.RawValue(datajs.c_str(), datajs.size(), rapidjson::kObjectType);
+        }
+        else {
+          native_to_json(member_from_void(member_ptr, &obj), state);
+        }
+      });
+    state.writer.EndObject();
   }
   
   void native_to_json(const chain_state::recurse_action_trace& obj, native_to_json_state& state) {
@@ -136,16 +139,15 @@ namespace json_encoder {
 
   
   inline void native_to_json(const chain_state::transaction_trace& obj, native_to_json_state& state) {
-    native_to_json(obj.id, state);
-    native_to_json(obj.status, state);
-    native_to_json(obj.cpu_usage_us, state);
-    native_to_json(obj.net_usage_words, state);
-    native_to_json(obj.elapsed, state);
-    native_to_json(obj.net_usage, state);
-    native_to_json(obj.scheduled, state);
-    native_to_json(obj.action_traces, state);
-    native_to_json(obj.except, state);
-    native_to_json(obj.failed_dtrx_trace, state);
+    state.writer.StartObject();
+    for_each_field((chain_state::transaction_trace*)nullptr, [&](auto* name, auto member_ptr) {
+        if( string("dummy") == name ) {
+          return;
+        }
+        state.writer.Key(name);
+        native_to_json(member_from_void(member_ptr, &obj), state);
+      });
+    state.writer.EndObject();
   }
 
   void native_to_json(const chain_state::recurse_transaction_trace& obj, native_to_json_state& state) {
@@ -154,18 +156,23 @@ namespace json_encoder {
     
 
   inline void native_to_json(const chain_state::key_value_object& obj, native_to_json_state& state) {
-    native_to_json(obj.code, state);
-    native_to_json(obj.scope, state);
-    native_to_json(obj.table, state);
-    native_to_json(obj.primary_key, state);
-    native_to_json(obj.payer, state);
+    state.writer.StartObject();
+    for_each_field((chain_state::key_value_object*)nullptr, [&](auto* name, auto member_ptr) {
+        state.writer.Key(name);
+        if( string("value") == name ) {
+          // encode table row according to ABI
+          auto ctxt = get_contract_abi_ctxt(obj.code);
+          const string table_name = name_to_string(obj.table.value);
+          string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
+                                            obj.value.data(), obj.value.size());
+          state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
+        }
+        else {
+          native_to_json(member_from_void(member_ptr, &obj), state);
+        }
+      });
+    state.writer.EndObject();
 
-    // encode action data accordin gto ABI
-    auto ctxt = get_contract_abi_ctxt(obj.code);
-    const string table_name = name_to_string(obj.table.value);
-    string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
-                                      obj.value.data(), obj.value.size());
-    state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
   }
 
   
@@ -286,37 +293,37 @@ public:
   void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {
     auto output = make_shared<string>();
     json_encoder::native_to_json(*block_ptr, *output);
-    _js_forks_chan.publish(output);
+    _js_blocks_chan.publish(output);
   }
 
   void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
     auto output = make_shared<string>();
     json_encoder::native_to_json(*ccttr, *output);
-    _js_forks_chan.publish(output);
+    _js_transaction_traces_chan.publish(output);
   }
 
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {
     auto output = make_shared<string>();
     json_encoder::native_to_json(*abiupd, *output);
-    _js_forks_chan.publish(output);
+    _js_abi_updates_chan.publish(output);
   }
 
   void on_abi_removal(abieos::name conrtract) {
     auto output = make_shared<string>();
     json_encoder::native_to_json(conrtract, *output);
-    _js_forks_chan.publish(output);
+    _js_abi_removals_chan.publish(output);
   }
 
   void on_abi_error(std::shared_ptr<chronicle::channels::abi_error> abierr) {
     auto output = make_shared<string>();
     json_encoder::native_to_json(*abierr, *output);
-    _js_forks_chan.publish(output);
+    _js_abi_errors_chan.publish(output);
   }
   
   void on_table_row_update(std::shared_ptr<chronicle::channels::table_row_update> trupd) {
     auto output = make_shared<string>();
     json_encoder::native_to_json(*trupd, *output);
-    _js_forks_chan.publish(output);
+    _js_table_row_updates_chan.publish(output);
   }
 };
 

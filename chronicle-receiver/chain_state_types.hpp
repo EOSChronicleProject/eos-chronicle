@@ -32,6 +32,11 @@ namespace chain_state {
 
   struct variant_header_zero {};
 
+  template <typename F>
+  constexpr void for_each_field(variant_header_zero*, F f) {
+  }
+
+  
   bool bin_to_native(variant_header_zero&, bin_to_native_state& state, bool);
   bool json_to_native(variant_header_zero&, json_to_native_state&, event_type, bool);
 
