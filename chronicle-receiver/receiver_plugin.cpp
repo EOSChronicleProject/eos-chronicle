@@ -543,6 +543,7 @@ public:
   void save_contract_abi(name account, std::vector<char> data) {
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
     try {
+      // this checks the validity of ABI
       abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size());
       contract_abi_imported.insert(account.value);
       

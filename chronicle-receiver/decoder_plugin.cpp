@@ -130,7 +130,7 @@ namespace json_encoder {
     native_to_json(obj.inline_traces, state);
   }
   
-  inline void native_to_json(const chain_state::recurse_action_trace& obj, native_to_json_state& state) {
+  void native_to_json(const chain_state::recurse_action_trace& obj, native_to_json_state& state) {
     const chain_state::action_trace& o = obj; native_to_json(o, state);
   }
 
@@ -148,10 +148,25 @@ namespace json_encoder {
     native_to_json(obj.failed_dtrx_trace, state);
   }
 
-  inline void native_to_json(const chain_state::recurse_transaction_trace& obj, native_to_json_state& state) {
+  void native_to_json(const chain_state::recurse_transaction_trace& obj, native_to_json_state& state) {
     const chain_state::transaction_trace& o = obj; native_to_json(o, state);
   }
     
+
+  inline void native_to_json(const chain_state::key_value_object& obj, native_to_json_state& state) {
+    native_to_json(obj.code, state);
+    native_to_json(obj.scope, state);
+    native_to_json(obj.table, state);
+    native_to_json(obj.primary_key, state);
+    native_to_json(obj.payer, state);
+
+    // encode action data accordin gto ABI
+    auto ctxt = get_contract_abi_ctxt(obj.code);
+    const string table_name = name_to_string(obj.table.value);
+    string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
+                                      obj.value.data(), obj.value.size());
+    state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
+  }
 
   
   template <typename T>
