@@ -119,12 +119,19 @@ namespace json_encoder {
         }
         state.writer.Key(name);
         if( string("data") == name ) {
-          // encode action data according to ABI
-          auto ctxt = get_contract_abi_ctxt(obj.account);
           const string action_name = name_to_string(obj.name.value);
-          string datajs = abieos_bin_to_json(ctxt, obj.account.value, action_name.c_str(),
-                                             obj.data.data.data(), obj.data.data.size());
-          state.writer.RawValue(datajs.c_str(), datajs.size(), rapidjson::kObjectType);
+          try {
+            // encode action data according to ABI
+            auto ctxt = get_contract_abi_ctxt(obj.account);
+            
+            string datajs = abieos_bin_to_json(ctxt, obj.account.value, action_name.c_str(),
+                                               obj.data.data.data(), obj.data.data.size());
+            state.writer.RawValue(datajs.c_str(), datajs.size(), rapidjson::kObjectType);
+          }
+          catch ( ... ) {
+            std::cerr << "Cannot decode action data for " << name_to_string(obj.account.value) <<": " << action_name << "\n";
+            native_to_json(obj.data, state);
+          }
         }
         else {
           native_to_json(member_from_void(member_ptr, &obj), state);
@@ -161,12 +168,17 @@ namespace json_encoder {
         state.writer.Key(name);
         if( string("value") == name ) {
           // encode table row according to ABI
-          auto ctxt = get_contract_abi_ctxt(obj.code);
           const string table_name = name_to_string(obj.table.value);
-          std::cerr << "key_value_object: " << name_to_string(obj.code.value) << ":" << table_name <<"\n";
-          string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
-                                            obj.value.data.data(), obj.value.data.size());
-          state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
+          try {
+            auto ctxt = get_contract_abi_ctxt(obj.code);
+            string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
+                                              obj.value.data.data(), obj.value.data.size());
+            state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
+          }
+          catch ( ... ) {
+            std::cerr << "Cannot decode table row for " << name_to_string(obj.code.value) <<": " << table_name << "\n";
+            native_to_json(obj.value, state);
+          }
         }
         else {
           native_to_json(member_from_void(member_ptr, &obj), state);
@@ -195,23 +207,11 @@ namespace json_encoder {
   
   template <typename T>
   void native_to_json(T& v, std::string& dest) {
-    try { 
-      rapidjson::StringBuffer buffer{};
-      rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
-      native_to_json_state state{writer};
-      native_to_json(v, state);
-      dest = buffer.GetString();
-    }
-    catch ( const boost::exception& e ) {
-      std::cerr << boost::diagnostic_information(e) << "\n";
-      throw;
-    } catch ( const std::exception& e ) {
-      std::cerr << e.what() << "\n";
-      throw;
-    } catch ( ... ) {
-      std::cerr << "unknown exception\n";
-      throw;
-    }
+    rapidjson::StringBuffer buffer{};
+    rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
+    native_to_json_state state{writer};
+    native_to_json(v, state);
+    dest = buffer.GetString();
   }
 }
 
