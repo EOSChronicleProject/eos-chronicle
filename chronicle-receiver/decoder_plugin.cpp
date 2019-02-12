@@ -8,92 +8,169 @@
 #include <fc/io/json.hpp>
 
 
+using namespace chronicle::channels;
+using namespace abieos;
+using namespace chain_state;
+
+using std::make_shared;
+
+
+
 namespace json_encoder {
   inline constexpr bool trace_native_to_json = false;
   
-  struct native_to_json_state : json_reader_handler<native_to_json_state> {
+  struct native_to_json_state {
     rapidjson::Writer<rapidjson::StringBuffer>& writer;
     
     native_to_json_state(rapidjson::Writer<rapidjson::StringBuffer>& writer)
       : writer{writer} {}
   };
 
-  struct json_serializer {
-    virtual void native_to_json(native_to_json_state& state) const = 0;
-  };
-  
-  template <typename T>
-  struct native_serializer_impl : native_serializer {
-    void native_to_json(native_to_json_state& state) const override {
-      using ::json_encoder::native_to_json;
-      return native_to_json(*reinterpret_cast<T*>(v), state);
+  inline void native_to_json(const std::string& str, native_to_json_state& state) {
+    state.writer.String(str.c_str(), str.size());
+  }
+
+  inline void native_to_json(const optional<std::string>& str, native_to_json_state& state) {
+    if( str ) {
+      state.writer.String(str.value().c_str(), str.value().size());
+    }
+    else {
+      state.writer.String("");
     }
   }
   
-  struct json_field_serializer_methods {
-    virtual void native_to_json(native_to_json_state& state) const = 0;
-  };
+  inline void arithmetic_to_json(const uint64_t& v, native_to_json_state& state) {
+    state.writer.Uint64(v);
+  }
+
+  inline void arithmetic_to_json(const int64_t& v, native_to_json_state& state) {
+    state.writer.Int64(v);
+  }
+
+  inline void arithmetic_to_json(const uint32_t& v, native_to_json_state& state) {
+    state.writer.Uint(v);
+  }
+
+  inline void arithmetic_to_json(const int32_t& v, native_to_json_state& state) {
+    state.writer.Int(v);
+  }
   
-  struct json_field_serializer {
-    const json_field_serializer_methods* methods = nullptr;
-  };
-
+  // These two functions are stolen from native_to_bin branch in abieos and should go away as
+  // soon as it merges
+  template <class C, typename M>
+  const C* class_from_void(M C::*, const void* v) {
+    return reinterpret_cast<const C*>(v);
+  }
+  
+  template <auto P>
+  auto& member_from_void(const member_ptr<P>&, const void* p) {
+    return class_from_void(P, p)->*P;
+  }
+  
   template <typename T>
-  inline constexpr auto json_serializer_for = json_serializer_impl<T>{};
+  void native_to_json(const std::vector<T>& obj, native_to_json_state& state) {
+    state.writer.StartArray();
+    for (auto& v : obj)
+      native_to_json(v, state);
+    state.writer.EndArray();
+  }
 
-  template <typename member_ptr>
-  constexpr auto create_json_field_serializer_methods_impl() {
-    struct impl : json_field_serializer_methods {
-      void void native_to_json(native_to_json_state& state) const override {
-        using ::json_encoder::native_to_json;
-        return native_to_json(member_from_void(member_ptr{}, v), state);
+  inline void native_to_json(const chain_state::transaction_status& obj, native_to_json_state& state) {
+    std::string result = to_string(obj);
+    state.writer.String(result.c_str(), result.size());
+  }
+    
+  inline void native_to_json(const name& obj, native_to_json_state& state) { arithmetic_to_json(obj.value, state); }
+  
+  inline void native_to_json(const bytes& obj, native_to_json_state& state) {
+    std::string result;
+    boost::algorithm::hex(obj.data.begin(), obj.data.end(), std::back_inserter(result));
+    state.writer.String(result.c_str(), result.size());
+  }
+
+  template <unsigned size>
+  inline void native_to_json(const fixed_binary<size>& obj, native_to_json_state& state) {
+    std::string result;
+    boost::algorithm::hex(obj.value.begin(), obj.value.end(), std::back_inserter(result));
+    state.writer.String(result.c_str(), result.size());
+  }
+  
+  inline void native_to_json(const bool& obj, native_to_json_state& state) {
+    state.writer.Bool(obj);
+  }
+
+  inline void native_to_json(const varuint32& obj, native_to_json_state& state) {
+    arithmetic_to_json(obj.value, state);
+  }
+  
+  inline void native_to_json(const chain_state::action_trace& obj, native_to_json_state& state) {
+    native_to_json(obj.receipt_receiver, state);
+    native_to_json(obj.receipt_act_digest, state);
+    native_to_json(obj.receipt_global_sequence, state);
+    native_to_json(obj.receipt_recv_sequence, state);
+    native_to_json(obj.receipt_auth_sequence, state);
+    native_to_json(obj.receipt_code_sequence, state);
+    native_to_json(obj.receipt_abi_sequence, state);
+    native_to_json(obj.account, state);
+    native_to_json(obj.name, state);
+    native_to_json(obj.authorization, state);
+    native_to_json(obj.data, state);
+    native_to_json(obj.context_free, state);
+    native_to_json(obj.elapsed, state);
+    native_to_json(obj.console, state);
+    native_to_json(obj.account_ram_deltas, state);
+    native_to_json(obj.except, state);
+    native_to_json(obj.inline_traces, state);
+  }
+  
+  inline void native_to_json(const chain_state::recurse_action_trace& obj, native_to_json_state& state) {
+    const chain_state::action_trace& o = obj; native_to_json(o, state);
+  }
+
+  
+  inline void native_to_json(const chain_state::transaction_trace& obj, native_to_json_state& state) {
+    native_to_json(obj.id, state);
+    native_to_json(obj.status, state);
+    native_to_json(obj.cpu_usage_us, state);
+    native_to_json(obj.net_usage_words, state);
+    native_to_json(obj.elapsed, state);
+    native_to_json(obj.net_usage, state);
+    native_to_json(obj.scheduled, state);
+    native_to_json(obj.action_traces, state);
+    native_to_json(obj.except, state);
+    native_to_json(obj.failed_dtrx_trace, state);
+  }
+
+  inline void native_to_json(const chain_state::recurse_transaction_trace& obj, native_to_json_state& state) {
+    const chain_state::transaction_trace& o = obj; native_to_json(o, state);
+  }
+    
+
+  
+  template <typename T>
+  void native_to_json(const T& obj, native_to_json_state& state) {
+    if constexpr (std::is_class_v<T>) {
+        state.writer.StartObject();
+        for_each_field((T*)nullptr, [&](auto* name, auto member_ptr) {
+            state.writer.Key(name);
+            native_to_json(member_from_void(member_ptr, &obj), state);
+          });
+        state.writer.EndObject();
       }
-    };
-    return impl{};
+    else {
+      static_assert(std::is_arithmetic_v<T>);
+      arithmetic_to_json(obj, state);
+    }
   }
   
-  template <typename member_ptr>
-  inline constexpr auto field_serializer_methods_for = create_json_field_serializer_methods_impl<member_ptr>();
-  
   template <typename T>
-  constexpr auto create_json_field_serializers() {
-    constexpr auto num_fields = ([&]() constexpr {
-        int num_fields = 0;
-        for_each_field((T*)nullptr, [&](auto, auto) { ++num_fields; });
-        return num_fields;
-      }());
-    std::array<json_field_serializer, num_fields> fields;
-    int i = 0;
-    for_each_field((T*)nullptr, [&](auto* name, auto member_ptr) {
-        fields[i++] = {name, &field_serializer_methods_for<decltype(member_ptr)>};
-      });
-    return fields;
-  }
-
-  template <typename T>
-  inline constexpr auto json_field_serializers_for = create_json_field_serializers<T>();
-  
-  template <typename T>
-  void native_to_json(T*, native_to_json_state& state) -> std::enable_if_t<std::is_arithmetic_v<T>, bool>;
-
-  inline void native_to_json(std::string* str, native_to_json_state& state) {
-    state.writer.String(str.c_str(), str.size());
-  }
-  
-  inline void native_to_json(bytes v, native_to_json_state& state) {
-    state.writer.String(v.data.c_str(), v.data.size());
-  }
-
-
-  template <typename T>
-  void native_to_json(T* v, std::string& dest) {
+  void native_to_json(T& v, std::string& dest) {
     rapidjson::StringBuffer buffer{};
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
     native_to_json_state state{writer};
-    native_to_json(v, native_to_json_state);
+    native_to_json(v, state);
     dest = buffer.GetString();
   }
-
 }
 
 
@@ -179,26 +256,45 @@ public:
   }
 
   void on_fork(std::shared_ptr<chronicle::channels::fork_event> fe) {
-    
-    _js_forks_chan.publish()
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(*fe, *output);
+    _js_forks_chan.publish(output);
   }
 
   void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(*block_ptr, *output);
+    _js_forks_chan.publish(output);
   }
 
   void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(*ccttr, *output);
+    _js_forks_chan.publish(output);
   }
 
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(*abiupd, *output);
+    _js_forks_chan.publish(output);
   }
 
   void on_abi_removal(abieos::name conrtract) {
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(conrtract, *output);
+    _js_forks_chan.publish(output);
   }
 
   void on_abi_error(std::shared_ptr<chronicle::channels::abi_error> abierr) {
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(*abierr, *output);
+    _js_forks_chan.publish(output);
   }
   
   void on_table_row_update(std::shared_ptr<chronicle::channels::table_row_update> trupd) {
+    auto output = make_shared<string>();
+    json_encoder::native_to_json(*trupd, *output);
+    _js_forks_chan.publish(output);
   }
 };
 
