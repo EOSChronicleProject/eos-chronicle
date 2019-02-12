@@ -114,7 +114,14 @@ namespace json_encoder {
     native_to_json(obj.account, state);
     native_to_json(obj.name, state);
     native_to_json(obj.authorization, state);
-    native_to_json(obj.data, state);
+
+    // encode action data accordin gto ABI
+    auto ctxt = get_contract_abi_ctxt(obj.account);
+    const string action_name = name_to_string(obj.name.value);
+    string datajs = abieos_bin_to_json(ctxt, obj.account.value, action_name.c_str(),
+                                       obj.data.data.data(), obj.data.data.size());
+    state.writer.RawValue(datajs.c_str(), datajs.size(), rapidjson::kObjectType);
+    
     native_to_json(obj.context_free, state);
     native_to_json(obj.elapsed, state);
     native_to_json(obj.console, state);
