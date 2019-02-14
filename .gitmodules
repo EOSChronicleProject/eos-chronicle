@@ -9,5 +9,5 @@
 	url = https://github.com/EOSIO/fc.git
 [submodule "external/abieos"]
 	path = external/abieos
-	url = https://github.com/cc32d9/abieos.git
+	url = https://github.com/cc32d9/abieos
 	branch = master

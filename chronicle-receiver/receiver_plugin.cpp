@@ -175,6 +175,9 @@ public:
   abieos_context*                       contract_abi_ctxt = nullptr;
   set<uint64_t>                         contract_abi_imported;
 
+  std::map<name,std::set<name>>         blacklist_actions;
+
+  
   void start() {
     load_state();
     resolver->async_resolve
@@ -615,11 +618,19 @@ public:
       auto         num = read_varuint32(bin);
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
-        tr->block_timestamp = block_timestamp;
-        
         if (!bin_to_native(tr->trace, bin))
           throw runtime_error("transaction_trace conversion error (1)");
+        // check blacklist
+        for (auto& at: tr->trace.action_traces) {
+          auto search_acc = blacklist_actions.find(at.account);
+          if(search_acc != blacklist_actions.end()) {
+            if( search_acc->second.count(at.name) != 0 ) {
+              return;
+            }
+          }
+        }
         tr->block_num = head;
+        tr->block_timestamp = block_timestamp;
         channel.publish(tr);
       }
     }
@@ -744,6 +755,13 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->host = options.at("host").as<string>();
     my->port = options.at("port").as<string>();
     my->skip_to = options.at("skip-to").as<uint32_t>();
+
+    my->blacklist_actions.emplace
+      (std::make_pair(abieos::name("eosio"),
+                      std::set<abieos::name>{abieos::name("onblock")} ));
+    my->blacklist_actions.emplace
+      (std::make_pair(abieos::name("blocktwitter"),
+                      std::set<abieos::name>{abieos::name("tweet")} ));
     
     std::cerr << "initialized receiver_plugin\n";
   } catch ( const boost::exception& e ) {
