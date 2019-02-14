@@ -103,8 +103,8 @@ namespace json_encoder {
   }
   
   inline void native_to_json(const bool& obj, native_to_json_state& state) {
-    string str = to_string(obj);
-    state.writer.String(str.data(), str.length());
+    const char* str = obj ? "true" : "false";
+    state.writer.String(str);
   }
 
   inline void native_to_json(const varuint32& obj, native_to_json_state& state) {
@@ -119,17 +119,27 @@ namespace json_encoder {
         }
         state.writer.Key(name);
         if( string("data") == name ) {
-          const string action_name = name_to_string(obj.name.value);
+          // encode action data according to ABI
+          auto ctxt = get_contract_abi_ctxt(obj.account);
           try {
-            // encode action data according to ABI
-            auto ctxt = get_contract_abi_ctxt(obj.account);
-            
-            string datajs = abieos_bin_to_json(ctxt, obj.account.value, action_name.c_str(),
-                                               obj.data.data.data(), obj.data.data.size());
-            state.writer.RawValue(datajs.c_str(), datajs.size(), rapidjson::kObjectType);
+            const char* action_type = abieos_get_type_for_action(ctxt, obj.account.value, obj.name.value);
+            if( action_type == nullptr )
+              action_type = abieos_name_to_string(ctxt, obj.name.value);
+            try {
+              const char* datajs = abieos_bin_to_json(ctxt, obj.account.value, action_type,
+                                                      obj.data.data.data(), obj.data.data.size());
+              if( datajs == nullptr )
+                throw error("abieos_bin_to_json returned null");
+              state.writer.RawValue(datajs, strlen(datajs), rapidjson::kObjectType);
+            }
+            catch (...) {
+              throw error(abieos_get_error(ctxt));
+            }
           }
-          catch ( ... ) {
-            std::cerr << "Cannot decode action data for " << name_to_string(obj.account.value) <<": " << action_name << "\n";
+          catch ( const std::exception& e  ) {
+            std::cerr << "Cannot decode action data for " << abieos_name_to_string(ctxt, obj.account.value) <<": "
+                      << abieos_name_to_string(ctxt, obj.name.value)
+                      << " - " << e.what() << "\n";
             native_to_json(obj.data, state);
           }
         }
@@ -168,15 +178,26 @@ namespace json_encoder {
         state.writer.Key(name);
         if( string("value") == name ) {
           // encode table row according to ABI
-          const string table_name = name_to_string(obj.table.value);
+          auto ctxt = get_contract_abi_ctxt(obj.code);
           try {
-            auto ctxt = get_contract_abi_ctxt(obj.code);
-            string valjs = abieos_bin_to_json(ctxt, obj.code.value, table_name.c_str(),
-                                              obj.value.data.data(), obj.value.data.size());
-            state.writer.RawValue(valjs.c_str(), valjs.size(), rapidjson::kObjectType);
+            const char* table_type = abieos_get_type_for_table(ctxt, obj.code.value, obj.table.value);
+            if( table_type == nullptr )
+              table_type = abieos_name_to_string(ctxt, obj.table.value);
+            try {
+              const char* valjs = abieos_bin_to_json(ctxt, obj.code.value, table_type,
+                                                     obj.value.data.data(), obj.value.data.size());
+              if( valjs == nullptr )
+                throw error("abieos_bin_to_json returned null");
+              state.writer.RawValue(valjs, strlen(valjs), rapidjson::kObjectType);
+            }
+            catch (...) {
+              throw error(abieos_get_error(ctxt));
+            }
           }
-          catch ( ... ) {
-            std::cerr << "Cannot decode table row for " << name_to_string(obj.code.value) <<": " << table_name << "\n";
+          catch ( const std::exception& e ) {
+            std::cerr << "Cannot decode table row for " << abieos_name_to_string(ctxt, obj.code.value)
+                      <<": " << abieos_name_to_string(ctxt, obj.table.value)
+                      << " - " << e.what() << "\n";
             native_to_json(obj.value, state);
           }
         }

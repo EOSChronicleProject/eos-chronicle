@@ -527,8 +527,9 @@ public:
   }
 
   
-  void clear_contract_abi(name account) {    
-    init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
+  void clear_contract_abi(name account) {
+    if( contract_abi_imported.count(account.value) > 0 )
+      init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
@@ -542,12 +543,15 @@ public:
   
   void save_contract_abi(name account, std::vector<char> data) {
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
+    if( contract_abi_imported.count(account.value) > 0 ) {
+      init_contract_abi_ctxt();
+    }
+
     try {
       // this checks the validity of ABI
       if( !abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size()) ) {
         throw runtime_error( abieos_get_error(contract_abi_ctxt) );
-      }
-        
+      }        
       contract_abi_imported.insert(account.value);
       
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
@@ -766,10 +770,8 @@ void receiver_plugin::plugin_shutdown() {
 
 
 abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
-  if( my->get_contract_abi_ready(account) ) {
-    return my->contract_abi_ctxt;
-  }
-  return nullptr;
+  my->get_contract_abi_ready(account);
+  return my->contract_abi_ctxt;
 }
 
 
