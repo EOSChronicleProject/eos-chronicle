@@ -188,6 +188,64 @@ namespace json_encoder {
 
   }
 
+  template <typename T>
+  inline void native_to_json(const abieos::might_not_exist<T>& obj, native_to_json_state& state) {
+    native_to_json(obj.value, state);
+  }
+
+  template <typename T>
+  inline void native_to_json(const std::optional<T>& obj, native_to_json_state& state) {
+    if( obj ) {
+      native_to_json(obj.value(), state);
+    }
+    else {
+      state.writer.Null();
+    }
+  }
+  
+  template <typename T1, typename T2>
+  inline void native_to_json(const std::pair<T1,T2>& obj, native_to_json_state& state) {
+    state.writer.StartArray();
+    native_to_json(obj.first, state);
+    native_to_json(obj.second, state);
+    state.writer.EndArray();
+  }
+
+  inline void native_to_json(const abieos::block_timestamp& obj, native_to_json_state& state) {
+    string str = string(obj);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const abieos::public_key& obj, native_to_json_state& state) {
+    string str = public_key_to_string(obj);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const abieos::signature& obj, native_to_json_state& state) {
+    string str = signature_to_string(obj);
+    state.writer.String(str.data(), str.length());
+  }
+
+  // this is only to break compiler's recursion
+  inline void native_to_json(const chain_state::packed_transaction& obj, native_to_json_state& state) {
+    state.writer.StartObject();
+    for_each_field((chain_state::packed_transaction*)nullptr, [&](auto* name, auto member_ptr) {
+        state.writer.Key(name);
+        native_to_json(member_from_void(member_ptr, &obj), state);
+      });
+    state.writer.EndObject();
+  }
+
+  inline void native_to_json(const chain_state::transaction_variant& obj, native_to_json_state& state) {
+    if( obj.index() == 0 ) {
+      const checksum256& v = std::get<checksum256>(obj);
+      native_to_json(v, state);
+    }
+    else {
+      const packed_transaction& v = std::get<packed_transaction>(obj);
+      native_to_json(v, state);
+    }
+  }
   
   template <typename T>
   void native_to_json(const T& obj, native_to_json_state& state) {

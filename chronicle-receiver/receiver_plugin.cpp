@@ -165,7 +165,8 @@ public:
   uint32_t                              irreversible    = 0;
   checksum256                           irreversible_id = {};
   uint32_t                              first_bulk      = 0;
-
+  abieos::block_timestamp               block_timestamp;
+  
   // needed for decoding state history input
   abi_def                               abi{};    
   map<string, abi_type>                 abi_types;
@@ -433,20 +434,15 @@ public:
          cerr << "block=" << head << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
     }
 
-    /*
-      as of now, we don't do anything with raw block data, but we can, if needed:
-      auto block_ptr = std::make_shared<signed_block>();
-      if (!bin_to_native(*block_ptr, bin))
-        throw runtime_error("block conversion error");
-    */
-       
-    auto& channel = app().get_channel<chronicle::channels::blocks>();    
-    if (channel.has_subscribers()) {
-      auto block_ptr = std::make_shared<chronicle::channels::block>();
-      block_ptr->block_num = head;
-      block_ptr->last_irreversible = irreversible;
-      channel.publish(block_ptr);
-    }
+    auto block_ptr = std::make_shared<chronicle::channels::block>();
+    block_ptr->block_num = head;
+    block_ptr->last_irreversible = irreversible;
+    
+    if (!bin_to_native(block_ptr->block, bin))
+      throw runtime_error("block conversion error");
+    block_timestamp = block_ptr->block.timestamp;
+    
+    app().get_channel<chronicle::channels::blocks>().publish(block_ptr);  
   }
 
 
@@ -463,6 +459,7 @@ public:
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
       
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
+      bltd->block_timestamp = block_timestamp;
       
       if (!bin_to_native(bltd->table_delta, bin))
         throw runtime_error("table_delta conversion error (1)");
@@ -497,6 +494,8 @@ public:
             (rowschannel.has_subscribers() || errchannel.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
+            tru->block_num = head;
+            tru->block_timestamp = block_timestamp;
             if (!bin_to_native(tru->kvo, row.data))
               throw runtime_error("cannot read table row object");
             if( get_contract_abi_ready(tru->kvo.code) ) {
@@ -545,7 +544,10 @@ public:
     cerr << "Saving contract ABI for " << (std::string)account << "\n";
     try {
       // this checks the validity of ABI
-      abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size());
+      if( !abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size()) ) {
+        throw runtime_error( abieos_get_error(contract_abi_ctxt) );
+      }
+        
       contract_abi_imported.insert(account.value);
       
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
@@ -565,8 +567,12 @@ public:
       auto& channel = app().get_channel<chronicle::channels::abi_updates>();
       if (channel.has_subscribers()) {
         auto abiupd = std::make_shared<chronicle::channels::abi_update>();
+        abiupd->block_num = head;
+        abiupd->block_timestamp = block_timestamp;
         abiupd->account = account;
-        abiupd->abi = bytes {data};
+        abiupd->abi_bytes = bytes {data};
+        input_buffer buf{data.data(), data.data() + data.size()};
+        bin_to_native(abiupd->abi, buf);
         channel.publish(abiupd);
       }
     }
@@ -574,6 +580,7 @@ public:
       cerr << "ERROR: Cannot use ABI for " << (std::string)account << ": " << e.what() << "\n";
       auto ae = std::make_shared<chronicle::channels::abi_error>();
       ae->block_num = head;
+      ae->block_timestamp = block_timestamp;
       ae->account = account;
       ae->error = e.what();
       app().get_channel<chronicle::channels::abi_errors>().publish(ae);
@@ -604,6 +611,8 @@ public:
       auto         num = read_varuint32(bin);
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
+        tr->block_timestamp = block_timestamp;
+        
         if (!bin_to_native(tr->trace, bin))
           throw runtime_error("transaction_trace conversion error (1)");
         tr->block_num = head;
