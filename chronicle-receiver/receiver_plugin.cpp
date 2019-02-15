@@ -356,8 +356,10 @@ public:
 
     bool srart_undo_session = false;
     
-    if( last_irreversoble_num >= block_num ) {
-      db->set_revision(block_num); // we're catching up nehind the irreversible
+    if( block_num <= last_irreversoble_num ) {
+      // we're catching up behind the irreversible
+      db->commit(last_irreversoble_num);
+      db->set_revision(block_num); 
     }
     else {
       // we're at the blockchain head
@@ -621,17 +623,21 @@ public:
         if (!bin_to_native(tr->trace, bin))
           throw runtime_error("transaction_trace conversion error (1)");
         // check blacklist
-        for (auto& at: tr->trace.action_traces) {
+        bool blacklisted = false;
+        if( tr->trace.action_traces.size() > 0 ) {
+          auto &at = tr->trace.action_traces[0];
           auto search_acc = blacklist_actions.find(at.account);
           if(search_acc != blacklist_actions.end()) {
             if( search_acc->second.count(at.name) != 0 ) {
-              return;
+              blacklisted = true;
             }
           }
         }
-        tr->block_num = head;
-        tr->block_timestamp = block_timestamp;
-        channel.publish(tr);
+        if( !blacklisted ) {
+          tr->block_num = head;
+          tr->block_timestamp = block_timestamp;
+          channel.publish(tr);
+        }
       }
     }
   }
