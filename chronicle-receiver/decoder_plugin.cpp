@@ -403,7 +403,8 @@ public:
     _js_transaction_traces_chan.publish(output);
     if( encoder_errors.size() > 0 ) {
       map<string, string> attrs;
-      attrs["block_num"] = ccttr->block_num;
+      attrs["where"] = "transaction_trace";
+      attrs["block_num"] = std::to_string(ccttr->block_num);
       attrs["block_timestamp"] = string(ccttr->block_timestamp);
       attrs["trx_id"] = string(ccttr->trace.id);
       report_encoder_errors(encoder_errors, attrs);
@@ -435,9 +436,10 @@ public:
     _js_table_row_updates_chan.publish(output);
     if( encoder_errors.size() > 0 ) {
       map<string, string> attrs;
-      attrs["block_num"] = trupd->block_num;
+      attrs["where"] = "table_row_update";
+      attrs["block_num"] = std::to_string(trupd->block_num);
       attrs["block_timestamp"] = string(trupd->block_timestamp);
-      attrs["added"] = trupd->added;
+      attrs["added"] = trupd->added ? "true":"false";
       attrs["code"] = string(trupd->kvo.code);
       attrs["scope"] = string(trupd->kvo.scope);
       attrs["table"] = string(trupd->kvo.table);
