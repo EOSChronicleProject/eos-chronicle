@@ -6,7 +6,7 @@
 #include <iostream>
 #include <string>
 #include <fc/io/json.hpp>
-
+#include <sstream>
 
 using namespace chronicle::channels;
 using namespace abieos;
@@ -21,9 +21,7 @@ namespace json_encoder {
   
   struct native_to_json_state {
     rapidjson::Writer<rapidjson::StringBuffer>& writer;
-    
-    native_to_json_state(rapidjson::Writer<rapidjson::StringBuffer>& writer)
-      : writer{writer} {}
+    vector<string>* encoder_errors;    
   };
 
   inline void native_to_json(const std::string& str, native_to_json_state& state) {
@@ -137,9 +135,13 @@ namespace json_encoder {
             }
           }
           catch ( const std::exception& e  ) {
-            std::cerr << "Cannot decode action data for " << abieos_name_to_string(ctxt, obj.account.value) <<": "
-                      << abieos_name_to_string(ctxt, obj.name.value)
-                      << " - " << e.what() << "\n";
+            if( state.encoder_errors ) {
+              std::ostringstream os;
+              os << "Cannot decode action data for " << abieos_name_to_string(ctxt, obj.account.value) <<": "
+                 << abieos_name_to_string(ctxt, obj.name.value)
+                 << " - " << e.what();
+              state.encoder_errors->emplace_back(os.str());
+            }
             native_to_json(obj.data, state);
           }
         }
@@ -195,9 +197,13 @@ namespace json_encoder {
             }
           }
           catch ( const std::exception& e ) {
-            std::cerr << "Cannot decode table row for " << abieos_name_to_string(ctxt, obj.code.value)
-                      <<": " << abieos_name_to_string(ctxt, obj.table.value)
-                      << " - " << e.what() << "\n";
+            if( state.encoder_errors ) {
+              std::ostringstream os;
+              os << "Cannot decode table row for " << abieos_name_to_string(ctxt, obj.code.value)
+                 <<": " << abieos_name_to_string(ctxt, obj.table.value)
+                 << " - " << e.what();
+              state.encoder_errors->emplace_back(os.str());
+            }
             native_to_json(obj.value, state);
           }
         }
@@ -285,10 +291,10 @@ namespace json_encoder {
   }
   
   template <typename T>
-  void native_to_json(T& v, std::string& dest) {
+  void native_to_json(T& v, std::string& dest, vector<string>* encoder_errors=nullptr) {
     rapidjson::StringBuffer buffer{};
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
-    native_to_json_state state{writer};
+    native_to_json_state state{writer, encoder_errors};
     native_to_json(v, state);
     dest = buffer.GetString();
   }
@@ -304,7 +310,8 @@ public:
     _js_abi_updates_chan(app().get_channel<chronicle::channels::js_abi_updates>()),
     _js_abi_removals_chan(app().get_channel<chronicle::channels::js_abi_removals>()),
     _js_abi_errors_chan(app().get_channel<chronicle::channels::js_abi_errors>()),
-    _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>())
+    _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>()),
+    _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>())
   {}
   
   chronicle::channels::js_forks::channel_type&               _js_forks_chan;
@@ -314,6 +321,7 @@ public:
   chronicle::channels::js_abi_removals::channel_type&        _js_abi_removals_chan;
   chronicle::channels::js_abi_errors::channel_type&          _js_abi_errors_chan;
   chronicle::channels::js_table_row_updates::channel_type&   _js_table_row_updates_chan;
+  chronicle::channels::js_abi_decoder_errors::channel_type&  _js_abi_decoder_errors_chan;
 
   chronicle::channels::forks::channel_type::handle               _forks_subscription;
   chronicle::channels::blocks::channel_type::handle              _blocks_subscription;
@@ -322,7 +330,7 @@ public:
   chronicle::channels::abi_removals::channel_type::handle        _abi_removals_subscription;
   chronicle::channels::abi_updates::channel_type::handle         _abi_updates_subscription;
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
-
+  
   // we only siubscribe to receiver channels at startup, assuming our consumers have subscribed at init
   void start() {
     if (_js_forks_chan.has_subscribers()) {
@@ -389,9 +397,17 @@ public:
   }
 
   void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
+    vector<string> encoder_errors;
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*ccttr, *output);
+    json_encoder::native_to_json(*ccttr, *output, &encoder_errors);
     _js_transaction_traces_chan.publish(output);
+    if( encoder_errors.size() > 0 ) {
+      map<string, string> attrs;
+      attrs["block_num"] = ccttr->block_num;
+      attrs["block_timestamp"] = string(ccttr->block_timestamp);
+      attrs["trx_id"] = string(ccttr->trace.id);
+      report_encoder_errors(encoder_errors, attrs);
+    }
   }
 
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {
@@ -413,10 +429,41 @@ public:
   }
   
   void on_table_row_update(std::shared_ptr<chronicle::channels::table_row_update> trupd) {
+    vector<string> encoder_errors;
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*trupd, *output);
+    json_encoder::native_to_json(*trupd, *output, &encoder_errors);
     _js_table_row_updates_chan.publish(output);
+    if( encoder_errors.size() > 0 ) {
+      map<string, string> attrs;
+      attrs["block_num"] = trupd->block_num;
+      attrs["block_timestamp"] = string(trupd->block_timestamp);
+      attrs["added"] = trupd->added;
+      attrs["code"] = string(trupd->kvo.code);
+      attrs["scope"] = string(trupd->kvo.scope);
+      attrs["table"] = string(trupd->kvo.table);
+      attrs["primary_key"] = trupd->kvo.primary_key;
+      report_encoder_errors(encoder_errors, attrs);
+    }
   }
+
+  inline void report_encoder_errors(vector<string>& encoder_errors, map<string, string>& attrs) {
+    rapidjson::StringBuffer buffer{};
+    rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
+    writer.StartObject();
+    for (auto const& p : attrs) {
+      writer.Key(p.first.c_str());
+      writer.String(p.second.c_str());
+    }
+    writer.Key("errors");
+    writer.StartArray();
+    for (auto& err : encoder_errors)
+      writer.String(err.c_str());
+    writer.EndArray();
+    writer.EndObject();
+    auto output = make_shared<string>(buffer.GetString());
+    _js_abi_decoder_errors_chan.publish(output);
+  }
+      
 };
 
 

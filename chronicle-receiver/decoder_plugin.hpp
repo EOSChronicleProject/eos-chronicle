@@ -13,6 +13,7 @@ namespace chronicle {
     using js_abi_removals        = channel_decl<struct js_abi_removals_tag, std::shared_ptr<string>>;
     using js_abi_errors          = channel_decl<struct js_abi_errors_tag, std::shared_ptr<string>>;
     using js_table_row_updates   = channel_decl<struct js_table_row_updates_tag, std::shared_ptr<string>>;
+    using js_abi_decoder_errors  = channel_decl<struct js_abi_decoder_errors_tag, std::shared_ptr<string>>;
   }
 }
 

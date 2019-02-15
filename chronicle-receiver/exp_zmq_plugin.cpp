@@ -23,6 +23,7 @@ public:
   chronicle::channels::js_abi_removals::channel_type::handle        _js_abi_removals_subscription;
   chronicle::channels::js_abi_errors::channel_type::handle          _js_abi_errors_subscription;
   chronicle::channels::js_table_row_updates::channel_type::handle   _js_table_row_updates_subscription;
+  chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
 
 
   zmq::context_t context;
@@ -60,7 +61,11 @@ public:
     _js_table_row_updates_subscription =
       app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
       ([this](std::shared_ptr<string> event){ on_event(CHRONICLE_MSGTYPE_TBL_ROW, 0, event); });
-  }
+
+    _js_abi_decoder_errors_subscription =
+      app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
+      ([this](std::shared_ptr<string> event){ on_event(CHRONICLE_MSGTYPE_ENCODER_ERR, 0, event); });
+}
 
   void start() {}
   
