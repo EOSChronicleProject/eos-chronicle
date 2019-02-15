@@ -7,6 +7,8 @@
 #include <string>
 #include <fc/io/json.hpp>
 #include <sstream>
+#include <fc/log/logger.hpp>
+#include <fc/exception/exception.hpp>
 
 using namespace chronicle::channels;
 using namespace abieos;
@@ -483,27 +485,19 @@ void decoder_plugin::set_program_options( options_description& cli, options_desc
   
 void decoder_plugin::plugin_initialize( const variables_map& options ) {
   try {
-    std::cerr << "initialized decoder_plugin\n";
-  } catch ( const boost::exception& e ) {
-    std::cerr << boost::diagnostic_information(e) << "\n";
-    throw;
-  } catch ( const std::exception& e ) {
-    std::cerr << e.what() << "\n";
-    throw;
-  } catch ( ... ) {
-    std::cerr << "unknown exception\n";
-    throw;
+    ilog("Initialized decoder_plugin");
   }
+  FC_LOG_AND_RETHROW();
 }
 
 
 void decoder_plugin::plugin_startup(){
   my->start();
-  std::cerr << "started decoder_plugin\n";
+  ilog("Started decoder_plugin");
 }
 
 void decoder_plugin::plugin_shutdown() {
-  std::cerr << "decoder_plugin stopped\n";
+  ilog("decoder_plugin stopped");
 }
 
 

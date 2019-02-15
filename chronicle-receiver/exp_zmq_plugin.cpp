@@ -5,6 +5,7 @@
 #include "chronicle_msgtypes.h"
 #include <zmq.hpp>
 #include <fc/log/logger.hpp>
+#include <fc/exception/exception.hpp>
 
 static appbase::abstract_plugin& _exp_zmq_plugin = app().register_plugin<exp_zmq_plugin>();
 
@@ -107,24 +108,16 @@ void exp_zmq_plugin::plugin_initialize( const variables_map& options ) {
 
     ilog("Binding to ZMQ PUSH socket ${u}", ("u", my->socket_bind_str));
     my->sender_socket.bind(my->socket_bind_str);
-    
-    std::cerr << "initialized exp_zmq_plugin\n";
-  } catch ( const boost::exception& e ) {
-    std::cerr << boost::diagnostic_information(e) << "\n";
-    throw;
-  } catch ( const std::exception& e ) {
-    std::cerr << e.what() << "\n";
-    throw;
-  } catch ( ... ) {
-    std::cerr << "unknown exception\n";
-    throw;
+
+    ilog("Initialized exp_zmq_plugin");
   }
+  FC_LOG_AND_RETHROW();
 }
 
 
 void exp_zmq_plugin::plugin_startup(){
   my->start();
-  std::cerr << "started exp_zmq_plugin\n";
+  ilog("Started exp_zmq_plugin");
 }
 
 void exp_zmq_plugin::plugin_shutdown() {
@@ -132,7 +125,7 @@ void exp_zmq_plugin::plugin_shutdown() {
     my->sender_socket.disconnect(my->socket_bind_str);
     my->sender_socket.close();
   }
-  std::cerr << "exp_zmq_plugin stopped\n";
+  ilog("exp_zmq_plugin stopped");
 }
 
 

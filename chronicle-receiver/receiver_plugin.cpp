@@ -23,14 +23,14 @@
 #include <string>
 #include <memory>
 #include <string_view>
-
+#include <fc/log/logger.hpp>
+#include <fc/exception/exception.hpp>
 
 using namespace abieos;
 using namespace appbase;
 using namespace std::literals;
 using namespace chain_state;
 
-using std::cerr;
 using std::enable_shared_from_this;
 using std::exception;
 using std::make_shared;
@@ -184,7 +184,7 @@ public:
       (host, port,
        [this](error_code ec, tcp::resolver::results_type results) {
         if (ec)
-          cerr << "during lookup of " << host << ":" << port << ": " << ec;
+          elog("Error during lookup of ${h}:${p} - ${e}", ("h",host)("p",port)("e", ec.message()));
         
         callback(ec, "resolve", [&] {
             asio::async_connect
@@ -213,7 +213,7 @@ public:
       auto &index = db->get_index<chronicle::state_index>();
       if( index.stack().size() > 0 ) {
         depth = index.stack().size();
-        cerr << "Database has " << depth << " uncommitted revisions. Reverting back.\n";
+        ilog("Database has ${d} uncommitted revisions. Reverting back", ("d",depth));
         while (index.stack().size() > 0)
           db->undo();
         did_undo = true;
@@ -230,7 +230,7 @@ public:
     }
 
     if( did_undo ) {
-      cerr << "Reverted to block=" << head << ", issuing an explicit fork event\n";
+      ilog("Reverted to block=${b}, issuing an explicit fork event", ("b",head));
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->fork_block_num = head;
       fe->depth = depth;
@@ -318,7 +318,7 @@ public:
     }
 
     uint32_t start_block = max(skip_to, head + 1);
-    cerr << "Start block: " << start_block << "\n";
+    ilog("Start block: ${b}", ("b",start_block));
     
     send(jvalue{jarray{{"get_blocks_request_v0"s},
             {jobject{
@@ -365,7 +365,7 @@ public:
       // we're at the blockchain head
       
       if (block_num <= head) { //received a block that is lower than what we already saw
-        cerr << "fork detected at block " << block_num <<"; head=" << head <<"\n";
+        ilog("fork detected at block ${b}; head=${h}", ("b",block_num)("h",head));
         uint32_t depth = head - block_num;
         init_contract_abi_ctxt();
         while( db->revision() >= block_num ) {
@@ -430,13 +430,14 @@ public:
   
   void receive_block(input_buffer bin) {
     if( head == irreversible ) {
-      cerr << "crossing irreversible block=" << head <<"\n";
+      ilog("Crossing irreversible block=${h}", ("h",head));
     }
       
-    if (head % 1000 == 0) {
+    if (head % 10000 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
-         cerr << "block=" << head << "; irreversible=" << irreversible << "; dbmem_free=" << free_bytes*100/size << "%\n";
+         ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
+              ("h",head)("i",irreversible)("m", free_bytes*100/size));
     }
 
     auto block_ptr = std::make_shared<chronicle::channels::block>();
@@ -524,7 +525,7 @@ public:
 
   void init_contract_abi_ctxt() {
     if( contract_abi_ctxt ) {
-      cerr << "Destroying ABI cache\n";
+      // dlog("Destroying ABI cache");
       abieos_destroy(contract_abi_ctxt);
       contract_abi_imported.clear();
     }
@@ -538,7 +539,7 @@ public:
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
-      cerr << "Clearing contract ABI for " << (std::string)account << "\n";
+      // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
       db->remove(*itr);
       app().get_channel<chronicle::channels::abi_removals>().publish(account);
     }
@@ -547,7 +548,7 @@ public:
 
   
   void save_contract_abi(name account, std::vector<char> data) {
-    cerr << "Saving contract ABI for " << (std::string)account << "\n";
+    // dlog("Saving contract ABI for ${a}", ("a",(std::string)account));
     if( contract_abi_imported.count(account.value) > 0 ) {
       init_contract_abi_ctxt();
     }
@@ -586,7 +587,7 @@ public:
       }
     }
     catch (const exception& e) {
-      cerr << "ERROR: Cannot use ABI for " << (std::string)account << ": " << e.what() << "\n";
+      wlog("Cannot use ABI for ${a}: ${e}", ("a",(std::string)account)("e",e.what()));
       auto ae = std::make_shared<chronicle::channels::abi_error>();
       ae->block_num = head;
       ae->block_timestamp = block_timestamp;
@@ -603,7 +604,7 @@ public:
     const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
     auto itr = idx.find(account.value);
     if( itr != idx.end() ) {
-      cerr << "Found in DB: ABI for " << (std::string)account << "\n";
+      // dlog("Found in DB: ABI for ${a}", ("a",(std::string)account));
       abieos_set_abi_bin(contract_abi_ctxt, account.value, itr->abi.data(), itr->abi.size());
       contract_abi_imported.insert(account.value);
       return true;
@@ -689,10 +690,10 @@ public:
     try {
       f();
     } catch (const exception& e) {
-      cerr << "error: " << e.what() << "\n";
+      elog("ERROR: ${e}", ("e",e.what()));
       close();
     } catch (...) {
-      cerr << "error: unknown exception\n";
+      elog("ERROR: unknown exception");
       close();
     }
   }
@@ -707,10 +708,10 @@ public:
 
   void on_fail(error_code ec, const char* what) {
     try {
-      cerr << what << ": " << ec.message() << "\n";
+      elog("ERROR: ${e}", ("e",ec.message()));
       close();
     } catch (...) {
-      cerr << "error: exception while closing\n";
+      elog("ERROR: exception while closing");
     }
   }
 
@@ -769,27 +770,19 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       (std::make_pair(abieos::name("blocktwitter"),
                       std::set<abieos::name>{abieos::name("tweet")} ));
     
-    std::cerr << "initialized receiver_plugin\n";
-  } catch ( const boost::exception& e ) {
-    std::cerr << boost::diagnostic_information(e) << "\n";
-    throw;
-  } catch ( const std::exception& e ) {
-    std::cerr << e.what() << "\n";
-    throw;
-  } catch ( ... ) {
-    std::cerr << "unknown exception\n";
-    throw;
+    ilog("Initialized receiver_plugin");
   }
+  FC_LOG_AND_RETHROW();
 }
 
 
 void receiver_plugin::plugin_startup(){
   my->start();
-  std::cerr << "started receiver_plugin\n";
+  ilog("Started receiver_plugin");
 }
 
 void receiver_plugin::plugin_shutdown() {
-  std::cerr << "receiver_plugin stopped\n";
+  ilog("receiver_plugin stopped");
 }
 
 
