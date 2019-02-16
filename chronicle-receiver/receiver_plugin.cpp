@@ -511,6 +511,7 @@ public:
             else {
               auto ae =  std::make_shared<chronicle::channels::abi_error>();
               ae->block_num = head;
+              ae->block_timestamp = block_timestamp;
               ae->account = tru->kvo.code;
               ae->error = "cannot decode table delta because of missing ABI";
               errchannel.publish(ae);
@@ -541,7 +542,12 @@ public:
     if( itr != idx.end() ) {
       // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
       db->remove(*itr);
-      app().get_channel<chronicle::channels::abi_removals>().publish(account);
+      
+      auto ar =  std::make_shared<chronicle::channels::abi_removal>();
+      ar->block_num = head;
+      ar->block_timestamp = block_timestamp;
+      ar->account = account;
+      app().get_channel<chronicle::channels::abi_removals>().publish(ar);
     }
   }
 

@@ -366,8 +366,8 @@ public:
     if (_js_abi_removals_chan.has_subscribers()) {
       _abi_removals_subscription =
         app().get_channel<chronicle::channels::abi_removals>().subscribe
-        ([this](abieos::name contract){
-          on_abi_removal(contract);
+        ([this](std::shared_ptr<chronicle::channels::abi_removal> ar){
+          on_abi_removal(ar);
         });
     }
     if (_js_abi_errors_chan.has_subscribers()) {
@@ -419,9 +419,9 @@ public:
     _js_abi_updates_chan.publish(output);
   }
 
-  void on_abi_removal(abieos::name conrtract) {
+  void on_abi_removal(std::shared_ptr<chronicle::channels::abi_removal> ar) {
     auto output = make_shared<string>();
-    json_encoder::native_to_json(conrtract, *output);
+    json_encoder::native_to_json(*ar, *output);
     _js_abi_removals_chan.publish(output);
   }
 

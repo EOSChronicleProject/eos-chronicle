@@ -89,7 +89,21 @@ namespace chronicle {
     }
     
     using abi_updates = channel_decl<struct abi_updates_tag, std::shared_ptr<abi_update>>;
-    using abi_removals = channel_decl<struct abi_removals_tag, abieos::name>;
+
+    struct abi_removal {
+      uint32_t                        block_num;
+      abieos::block_timestamp         block_timestamp;
+      abieos::name                    account;
+    };
+
+    template <typename F>
+    constexpr void for_each_field(abi_removal*, F f) {
+      f("block_num", member_ptr<&abi_removal::block_num>{});
+      f("block_timestamp", member_ptr<&abi_removal::block_timestamp>{});
+      f("account", member_ptr<&abi_removal::account>{});
+    }
+
+    using abi_removals = channel_decl<struct abi_removals_tag, std::shared_ptr<abi_removal>>;
 
     struct abi_error {
       uint32_t                        block_num;
