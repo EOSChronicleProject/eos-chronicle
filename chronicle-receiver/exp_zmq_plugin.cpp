@@ -2,6 +2,7 @@
 
 #include "exp_zmq_plugin.hpp"
 #include "decoder_plugin.hpp"
+#include "receiver_plugin.hpp"
 #include "chronicle_msgtypes.h"
 #include <zmq.hpp>
 #include <fc/log/logger.hpp>
@@ -100,6 +101,8 @@ void exp_zmq_plugin::set_program_options( options_description& cli, options_desc
   
 void exp_zmq_plugin::plugin_initialize( const variables_map& options ) {
   try {
+    donot_start_receiver_before(this, "exp_zmq_plugin");
+
     my->socket_bind_str = options.at(SENDER_BIND_OPT).as<string>();
     if (my->socket_bind_str.empty()) {
       wlog("zmq-sender-bind not specified => exp_zmq_plugin disabled.");

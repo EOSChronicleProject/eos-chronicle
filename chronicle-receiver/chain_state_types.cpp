@@ -1,4 +1,5 @@
-#include "receiver_plugin.hpp"
+#include "chain_state_types.hpp"
+#include <abieos.h>
 
 namespace chain_state {
 

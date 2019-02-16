@@ -776,10 +776,37 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 }
 
 
+
+void receiver_plugin::start_after_dependencies() {
+  bool mustwait = false;
+  while( dependent_plugins.size() > 0 && !mustwait ) {
+    if( std::get<0>(dependent_plugins[0])->get_state() == appbase::abstract_plugin::started ) {
+      ilog("Dependent plugin has started: ${p}", ("p",std::get<1>(dependent_plugins[0])));
+      dependent_plugins.erase(dependent_plugins.begin());
+    }
+    else {
+      ilog("Dependent plugin has not yet started: ${p}", ("p",std::get<1>(dependent_plugins[0])));
+      mustwait = true;
+    }
+  }
+  
+  if( mustwait ) {
+    ilog("Waiting for dependent plugins");
+    boost::asio::deadline_timer t(std::ref(app().get_io_service()), boost::posix_time::seconds(1));
+    t.async_wait(boost::bind(&receiver_plugin::start_after_dependencies, this));
+  }
+  else {
+    ilog("All dependent plugins started, launching the receiver");
+    my->start();
+  }
+};
+
+
 void receiver_plugin::plugin_startup(){
-  my->start();
+  start_after_dependencies();
   ilog("Started receiver_plugin");
 }
+
 
 void receiver_plugin::plugin_shutdown() {
   ilog("receiver_plugin stopped");
@@ -789,6 +816,10 @@ void receiver_plugin::plugin_shutdown() {
 abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
   my->get_contract_abi_ready(account);
   return my->contract_abi_ctxt;
+}
+
+void receiver_plugin::add_dependency(appbase::abstract_plugin* plug, string plugname) {
+  dependent_plugins.emplace_back(std::make_tuple(plug, plugname));
 }
 
 
@@ -803,5 +834,14 @@ abieos_context* get_contract_abi_ctxt(abieos::name account) {
   return receiver_plug->get_contract_abi_ctxt(account);
 }
 
+// receiver should not start collecting data before all dependent plugins are ready
+
+void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname) {
+  if( ! receiver_plug ) {
+    receiver_plug = app().find_plugin<receiver_plugin>();
+  }
+  receiver_plug->add_dependency(plug, plugname);
+}
+  
 
 

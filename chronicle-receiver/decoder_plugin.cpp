@@ -485,6 +485,7 @@ void decoder_plugin::set_program_options( options_description& cli, options_desc
   
 void decoder_plugin::plugin_initialize( const variables_map& options ) {
   try {
+    donot_start_receiver_before(this, "decoder_plugin");
     ilog("Initialized decoder_plugin");
   }
   FC_LOG_AND_RETHROW();
