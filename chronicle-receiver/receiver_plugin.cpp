@@ -153,6 +153,17 @@ std::vector<char> zlib_decompress(input_buffer data) {
 
 class receiver_plugin_impl : std::enable_shared_from_this<receiver_plugin_impl> {
 public:
+  receiver_plugin_impl() :
+    _forks_chan(app().get_channel<chronicle::channels::forks>()),
+    _blocks_chan(app().get_channel<chronicle::channels::blocks>()),
+    _block_table_deltas_chan(app().get_channel<chronicle::channels::block_table_deltas>()),
+    _transaction_traces_chan(app().get_channel<chronicle::channels::transaction_traces>()),
+    _abi_updates_chan(app().get_channel<chronicle::channels::abi_updates>()),
+    _abi_removals_chan(app().get_channel<chronicle::channels::abi_removals>()),
+    _abi_errors_chan(app().get_channel<chronicle::channels::abi_errors>()),
+    _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>())
+  {};
+  
   shared_ptr<chainbase::database>       db;
   shared_ptr<tcp::resolver>             resolver;
   shared_ptr<websocket::stream<tcp::socket>> stream;
@@ -176,6 +187,15 @@ public:
   set<uint64_t>                         contract_abi_imported;
 
   std::map<name,std::set<name>>         blacklist_actions;
+
+  chronicle::channels::forks::channel_type&               _forks_chan;
+  chronicle::channels::blocks::channel_type&              _blocks_chan;
+  chronicle::channels::block_table_deltas::channel_type&  _block_table_deltas_chan;
+  chronicle::channels::transaction_traces::channel_type&  _transaction_traces_chan;
+  chronicle::channels::abi_updates::channel_type&         _abi_updates_chan;
+  chronicle::channels::abi_removals::channel_type&        _abi_removals_chan;
+  chronicle::channels::abi_errors::channel_type&          _abi_errors_chan;
+  chronicle::channels::table_row_updates::channel_type&   _table_row_updates_chan;
 
   
   void start() {
@@ -234,7 +254,7 @@ public:
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->fork_block_num = head;
       fe->depth = depth;
-      app().get_channel<chronicle::channels::forks>().publish(fe);
+      catch_and_close([&] {_forks_chan.publish(fe);});
     }
     
     if( skip_to > 0 ) {
@@ -379,7 +399,7 @@ public:
         auto fe = std::make_shared<chronicle::channels::fork_event>();
         fe->fork_block_num = block_num;
         fe->depth = depth;
-        app().get_channel<chronicle::channels::forks>().publish(fe);
+        catch_and_close([&] {_forks_chan.publish(fe);});
       }
       else
         if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
@@ -448,7 +468,7 @@ public:
       throw runtime_error("block conversion error");
     block_timestamp = block_ptr->block.timestamp;
     
-    app().get_channel<chronicle::channels::blocks>().publish(block_ptr);  
+    catch_and_close([&] {_blocks_chan.publish(block_ptr);});
   }
 
 
@@ -456,9 +476,6 @@ public:
   void receive_deltas(input_buffer buf) {
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
-    auto& rowschannel = app().get_channel<chronicle::channels::table_row_updates>();
-    auto& errchannel = app().get_channel<chronicle::channels::abi_errors>();
-    auto& btdchannel = app().get_channel<chronicle::channels::block_table_deltas>();
     
     auto     num     = read_varuint32(bin);
     for (uint32_t i = 0; i < num; ++i) {
@@ -497,7 +514,7 @@ public:
       }
       else {
         if (bltd->table_delta.name == "contract_row" && 
-            (rowschannel.has_subscribers() || errchannel.has_subscribers())) {
+            (_table_row_updates_chan.has_subscribers() || _abi_errors_chan.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             tru->block_num = head;
@@ -506,7 +523,7 @@ public:
               throw runtime_error("cannot read table row object");
             if( get_contract_abi_ready(tru->kvo.code) ) {
               tru->added = row.present;
-              rowschannel.publish(tru);
+              catch_and_close([&] {_table_row_updates_chan.publish(tru);});
             }
             else {
               auto ae =  std::make_shared<chronicle::channels::abi_error>();
@@ -514,12 +531,12 @@ public:
               ae->block_timestamp = block_timestamp;
               ae->account = tru->kvo.code;
               ae->error = "cannot decode table delta because of missing ABI";
-              errchannel.publish(ae);
+              catch_and_close([&] {_abi_errors_chan.publish(ae);});
             }
           }
         }
       }
-      btdchannel.publish(bltd);
+      catch_and_close([&] {_block_table_deltas_chan.publish(bltd);});
     }
   } // receive_deltas
 
@@ -547,7 +564,7 @@ public:
       ar->block_num = head;
       ar->block_timestamp = block_timestamp;
       ar->account = account;
-      app().get_channel<chronicle::channels::abi_removals>().publish(ar);
+      catch_and_close([&] {_abi_removals_chan.publish(ar);});
     }
   }
 
@@ -580,8 +597,7 @@ public:
           });
       }
 
-      auto& channel = app().get_channel<chronicle::channels::abi_updates>();
-      if (channel.has_subscribers()) {
+      if (_abi_updates_chan.has_subscribers()) {
         auto abiupd = std::make_shared<chronicle::channels::abi_update>();
         abiupd->block_num = head;
         abiupd->block_timestamp = block_timestamp;
@@ -589,7 +605,7 @@ public:
         abiupd->abi_bytes = bytes {data};
         input_buffer buf{data.data(), data.data() + data.size()};
         bin_to_native(abiupd->abi, buf);
-        channel.publish(abiupd);
+        catch_and_close([&] {_abi_updates_chan.publish(abiupd);});
       }
     }
     catch (const exception& e) {
@@ -599,7 +615,7 @@ public:
       ae->block_timestamp = block_timestamp;
       ae->account = account;
       ae->error = e.what();
-      app().get_channel<chronicle::channels::abi_errors>().publish(ae);
+      catch_and_close([&] {_abi_errors_chan.publish(ae);});
     }
   }
 
@@ -620,8 +636,7 @@ public:
   
   
   void receive_traces(input_buffer buf) {
-    auto& channel = app().get_channel<chronicle::channels::transaction_traces>();
-    if (channel.has_subscribers()) {
+    if (_transaction_traces_chan.has_subscribers()) {
       auto         data = zlib_decompress(buf);
       input_buffer bin{data.data(), data.data() + data.size()};
       auto         num = read_varuint32(bin);
@@ -643,7 +658,7 @@ public:
         if( !blacklisted ) {
           tr->block_num = head;
           tr->block_timestamp = block_timestamp;
-          channel.publish(tr);
+          catch_and_close([&] {_transaction_traces_chan.publish(tr);});
         }
       }
     }
@@ -728,8 +743,8 @@ public:
 
 
 
-receiver_plugin::receiver_plugin() :my(new receiver_plugin_impl){
-};
+receiver_plugin::receiver_plugin() : my(new receiver_plugin_impl)
+{};
 
 receiver_plugin::~receiver_plugin(){
 };
@@ -849,5 +864,24 @@ void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname
   receiver_plug->add_dependency(plug, plugname);
 }
   
+
+template <typename F>
+void catch_and_close(F f) {
+  try {
+    f();
+  } catch (const exception& e) {
+    elog("ERROR: ${e}", ("e",e.what()));
+    if( ! receiver_plug ) {
+      receiver_plug = app().find_plugin<receiver_plugin>();
+    }
+    receiver_plug->my->close();
+  } catch (...) {
+    elog("ERROR: unknown exception");
+    if( ! receiver_plug ) {
+      receiver_plug = app().find_plugin<receiver_plugin>();
+    }
+    receiver_plug->my->close();
+  }
+}
 
 

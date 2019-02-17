@@ -333,7 +333,7 @@ public:
   chronicle::channels::abi_updates::channel_type::handle         _abi_updates_subscription;
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
   
-  // we only siubscribe to receiver channels at startup, assuming our consumers have subscribed at init
+  // we only subscribe to receiver channels at startup, assuming our consumers have subscribed at init
   void start() {
     if (_js_forks_chan.has_subscribers()) {
       _forks_subscription =
