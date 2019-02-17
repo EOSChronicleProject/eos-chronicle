@@ -5,8 +5,12 @@
 
 #include <iostream>
 #include <string>
-#include <fc/io/json.hpp>
 #include <sstream>
+
+#include "rapidjson/reader.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+
 #include <fc/log/logger.hpp>
 #include <fc/exception/exception.hpp>
 
@@ -294,7 +298,7 @@ namespace json_encoder {
   
   template <typename T>
   void native_to_json(T& v, std::string& dest, vector<string>* encoder_errors=nullptr) {
-    rapidjson::StringBuffer buffer{};
+    rapidjson::StringBuffer buffer(0, 65536);
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
     native_to_json_state state{writer, encoder_errors};
     native_to_json(v, state);
