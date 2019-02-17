@@ -295,7 +295,8 @@ namespace json_encoder {
       arithmetic_to_json(obj, state);
     }
   }
-  
+
+  // ABI decoder uses this to produce an independent piece of JSON
   template <typename T>
   void native_to_json(T& v, std::string& dest, vector<string>* encoder_errors=nullptr) {
     rapidjson::StringBuffer buffer(0, 65536);
@@ -317,7 +318,8 @@ public:
     _js_abi_removals_chan(app().get_channel<chronicle::channels::js_abi_removals>()),
     _js_abi_errors_chan(app().get_channel<chronicle::channels::js_abi_errors>()),
     _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>()),
-    _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>())
+    _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>()),
+    impl_buffer(0, 262144)
   {}
   
   chronicle::channels::js_forks::channel_type&               _js_forks_chan;
@@ -336,6 +338,20 @@ public:
   chronicle::channels::abi_removals::channel_type::handle        _abi_removals_subscription;
   chronicle::channels::abi_updates::channel_type::handle         _abi_updates_subscription;
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
+
+  // A static copy of JSON writer buffer in order to avoid reallocation
+  rapidjson::StringBuffer impl_buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> impl_writer;
+
+  template <typename T>
+  void impl_native_to_json(T& v, std::string& dest, vector<string>* encoder_errors=nullptr) {
+    impl_buffer.Clear();
+    impl_writer.Reset(impl_buffer);
+    json_encoder::native_to_json_state state{impl_writer, encoder_errors};
+    json_encoder::native_to_json(v, state);
+    dest = impl_buffer.GetString();
+  }  
+
   
   // we only subscribe to receiver channels at startup, assuming our consumers have subscribed at init
   void start() {
@@ -392,20 +408,20 @@ public:
 
   void on_fork(std::shared_ptr<chronicle::channels::fork_event> fe) {
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*fe, *output);
+    impl_native_to_json(*fe, *output);
     _js_forks_chan.publish(output);
   }
 
   void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*block_ptr, *output);
+    impl_native_to_json(*block_ptr, *output);
     _js_blocks_chan.publish(output);
   }
 
   void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
     vector<string> encoder_errors;
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*ccttr, *output, &encoder_errors);
+    impl_native_to_json(*ccttr, *output, &encoder_errors);
     _js_transaction_traces_chan.publish(output);
     if( encoder_errors.size() > 0 ) {
       map<string, string> attrs;
@@ -419,26 +435,26 @@ public:
 
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*abiupd, *output);
+    impl_native_to_json(*abiupd, *output);
     _js_abi_updates_chan.publish(output);
   }
 
   void on_abi_removal(std::shared_ptr<chronicle::channels::abi_removal> ar) {
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*ar, *output);
+    impl_native_to_json(*ar, *output);
     _js_abi_removals_chan.publish(output);
   }
 
   void on_abi_error(std::shared_ptr<chronicle::channels::abi_error> abierr) {
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*abierr, *output);
+    impl_native_to_json(*abierr, *output);
     _js_abi_errors_chan.publish(output);
   }
   
   void on_table_row_update(std::shared_ptr<chronicle::channels::table_row_update> trupd) {
     vector<string> encoder_errors;
     auto output = make_shared<string>();
-    json_encoder::native_to_json(*trupd, *output, &encoder_errors);
+    impl_native_to_json(*trupd, *output, &encoder_errors);
     _js_table_row_updates_chan.publish(output);
     if( encoder_errors.size() > 0 ) {
       map<string, string> attrs;
@@ -455,7 +471,7 @@ public:
   }
 
   inline void report_encoder_errors(vector<string>& encoder_errors, map<string, string>& attrs) {
-    rapidjson::StringBuffer buffer{};
+    rapidjson::StringBuffer buffer(0, 1024);;
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
     writer.StartObject();
     for (auto const& p : attrs) {
