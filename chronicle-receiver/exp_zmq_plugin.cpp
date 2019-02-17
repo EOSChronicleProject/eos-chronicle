@@ -105,7 +105,7 @@ void exp_zmq_plugin::plugin_initialize( const variables_map& options ) {
 
     my->socket_bind_str = options.at(SENDER_BIND_OPT).as<string>();
     if (my->socket_bind_str.empty()) {
-      wlog("zmq-sender-bind not specified => exp_zmq_plugin disabled.");
+      wlog("exp-zmq-bind not specified => exp_zmq_plugin disabled.");
       return;
     }
 
