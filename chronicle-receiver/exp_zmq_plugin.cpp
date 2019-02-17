@@ -11,7 +11,7 @@
 static appbase::abstract_plugin& _exp_zmq_plugin = app().register_plugin<exp_zmq_plugin>();
 
 namespace {
-  const char* SENDER_BIND_OPT = "zmq-sender-bind";
+  const char* SENDER_BIND_OPT = "exp-zmq-bind";
   const char* SENDER_BIND_DEFAULT = "tcp://127.0.0.1:5557";
 }
 
