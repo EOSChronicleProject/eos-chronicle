@@ -165,5 +165,3 @@ private:
 
 abieos_context* get_contract_abi_ctxt(abieos::name account);
 void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname);
-
-template <typename F> void catch_and_close(F f);

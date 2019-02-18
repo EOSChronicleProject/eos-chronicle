@@ -54,6 +54,7 @@ add_executable(chronicle-receiver
   chronicle-receiver/chain_state_types.cpp
   chronicle-receiver/receiver_plugin.cpp
   chronicle-receiver/decoder_plugin.cpp
+  chronicle-receiver/exp_ws_plugin.cpp
   chronicle-receiver/exp_zmq_plugin.cpp
 )
 

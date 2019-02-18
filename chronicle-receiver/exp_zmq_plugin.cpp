@@ -35,7 +35,9 @@ public:
   exp_zmq_plugin_impl():
     context(1),
     sender_socket(context, ZMQ_PUSH)
-  {
+  {}
+
+  void init() {
     _js_forks_subscription =
       app().get_channel<chronicle::channels::js_forks>().subscribe
       ([this](std::shared_ptr<string> event){ on_event(CHRONICLE_MSGTYPE_FORK, 0, event); });
@@ -111,7 +113,8 @@ void exp_zmq_plugin::plugin_initialize( const variables_map& options ) {
 
     ilog("Binding to ZMQ PUSH socket ${u}", ("u", my->socket_bind_str));
     my->sender_socket.bind(my->socket_bind_str);
-
+    
+    my->init();
     ilog("Initialized exp_zmq_plugin");
   }
   FC_LOG_AND_RETHROW();

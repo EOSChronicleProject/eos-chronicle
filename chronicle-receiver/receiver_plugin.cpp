@@ -865,23 +865,3 @@ void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname
 }
   
 
-template <typename F>
-void catch_and_close(F f) {
-  try {
-    f();
-  } catch (const exception& e) {
-    elog("ERROR: ${e}", ("e",e.what()));
-    if( ! receiver_plug ) {
-      receiver_plug = app().find_plugin<receiver_plugin>();
-    }
-    receiver_plug->my->close();
-  } catch (...) {
-    elog("ERROR: unknown exception");
-    if( ! receiver_plug ) {
-      receiver_plug = app().find_plugin<receiver_plugin>();
-    }
-    receiver_plug->my->close();
-  }
-}
-
-
