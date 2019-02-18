@@ -48,11 +48,6 @@ Net::WebSocket::Server->new(
             },
             );
     },
-
-    on_shutdown => sub {
-        print "The stream ended\n";
-    },
-
     )->start;
 
 

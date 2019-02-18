@@ -74,14 +74,22 @@ public:
   void start() {}
   
   void on_event(int32_t msgtype, int32_t msgopts, std::shared_ptr<string> event) {
-    zmq::message_t message(event->length()+sizeof(msgtype)+sizeof(msgopts));
-    unsigned char* ptr = (unsigned char*) message.data();
-    memcpy(ptr, &msgtype, sizeof(msgtype));
-    ptr += sizeof(msgtype);
-    memcpy(ptr, &msgopts, sizeof(msgopts));
-    ptr += sizeof(msgopts);
-    memcpy(ptr, event->data(), event->length());
-    sender_socket.send(message);
+    try {
+      try {
+        zmq::message_t message(event->length()+sizeof(msgtype)+sizeof(msgopts));
+        unsigned char* ptr = (unsigned char*) message.data();
+        memcpy(ptr, &msgtype, sizeof(msgtype));
+        ptr += sizeof(msgtype);
+        memcpy(ptr, &msgopts, sizeof(msgopts));
+        ptr += sizeof(msgopts);
+        memcpy(ptr, event->data(), event->length());
+        sender_socket.send(message);
+      }
+      FC_LOG_AND_RETHROW();
+    }
+    catch (...) {
+      abort_receiver();
+    }
   }
 };
 

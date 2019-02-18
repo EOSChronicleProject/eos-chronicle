@@ -170,6 +170,7 @@ public:
   string                                host;
   string                                port;
   uint32_t                              skip_to = 0;
+  bool                                  aborting = false;
   
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
@@ -254,7 +255,7 @@ public:
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->fork_block_num = head;
       fe->depth = depth;
-      catch_and_close([&] {_forks_chan.publish(fe);});
+      _forks_chan.publish(fe);
     }
     
     if( skip_to > 0 ) {
@@ -399,7 +400,7 @@ public:
         auto fe = std::make_shared<chronicle::channels::fork_event>();
         fe->fork_block_num = block_num;
         fe->depth = depth;
-        catch_and_close([&] {_forks_chan.publish(fe);});
+        _forks_chan.publish(fe);
       }
       else
         if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
@@ -437,11 +438,11 @@ public:
     if (result.traces)
       receive_traces(*result.traces);
 
-    save_state();
-
-    // save a new revision
-    undo_session.push();
+    if( aborting )
+      return false;
     
+    save_state();
+    undo_session.push();     // save a new revision
     db->commit(irreversible);
     return true;
   }
@@ -467,8 +468,7 @@ public:
     if (!bin_to_native(block_ptr->block, bin))
       throw runtime_error("block conversion error");
     block_timestamp = block_ptr->block.timestamp;
-    
-    catch_and_close([&] {_blocks_chan.publish(block_ptr);});
+    _blocks_chan.publish(block_ptr);
   }
 
 
@@ -523,7 +523,7 @@ public:
               throw runtime_error("cannot read table row object");
             if( get_contract_abi_ready(tru->kvo.code) ) {
               tru->added = row.present;
-              catch_and_close([&] {_table_row_updates_chan.publish(tru);});
+              _table_row_updates_chan.publish(tru);
             }
             else {
               auto ae =  std::make_shared<chronicle::channels::abi_error>();
@@ -531,12 +531,12 @@ public:
               ae->block_timestamp = block_timestamp;
               ae->account = tru->kvo.code;
               ae->error = "cannot decode table delta because of missing ABI";
-              catch_and_close([&] {_abi_errors_chan.publish(ae);});
+              _abi_errors_chan.publish(ae);
             }
           }
         }
       }
-      catch_and_close([&] {_block_table_deltas_chan.publish(bltd);});
+      _block_table_deltas_chan.publish(bltd);
     }
   } // receive_deltas
 
@@ -564,7 +564,7 @@ public:
       ar->block_num = head;
       ar->block_timestamp = block_timestamp;
       ar->account = account;
-      catch_and_close([&] {_abi_removals_chan.publish(ar);});
+      _abi_removals_chan.publish(ar);
     }
   }
 
@@ -605,7 +605,7 @@ public:
         abiupd->abi_bytes = bytes {data};
         input_buffer buf{data.data(), data.data() + data.size()};
         bin_to_native(abiupd->abi, buf);
-        catch_and_close([&] {_abi_updates_chan.publish(abiupd);});
+        _abi_updates_chan.publish(abiupd);
       }
     }
     catch (const exception& e) {
@@ -615,7 +615,7 @@ public:
       ae->block_timestamp = block_timestamp;
       ae->account = account;
       ae->error = e.what();
-      catch_and_close([&] {_abi_errors_chan.publish(ae);});
+      _abi_errors_chan.publish(ae);
     }
   }
 
@@ -658,7 +658,7 @@ public:
         if( !blacklisted ) {
           tr->block_num = head;
           tr->block_timestamp = block_timestamp;
-          catch_and_close([&] {_transaction_traces_chan.publish(tr);});
+          _transaction_traces_chan.publish(tr);
         }
       }
     }
@@ -843,25 +843,38 @@ void receiver_plugin::add_dependency(appbase::abstract_plugin* plug, string plug
   dependent_plugins.emplace_back(std::make_tuple(plug, plugname));
 }
 
+void receiver_plugin::abort_receiver() {
+  my->close();
+  my->aborting = true;
+}
+
 
 // global implementation of ABI retriever
 
 static receiver_plugin* receiver_plug = nullptr;
 
-abieos_context* get_contract_abi_ctxt(abieos::name account) {
-  if( ! receiver_plug ) {
+inline void get_plug() {
+  if( !receiver_plug ) {
     receiver_plug = app().find_plugin<receiver_plugin>();
   }
+}
+  
+
+abieos_context* get_contract_abi_ctxt(abieos::name account) {
+  get_plug();
   return receiver_plug->get_contract_abi_ctxt(account);
 }
 
 // receiver should not start collecting data before all dependent plugins are ready
 
 void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname) {
-  if( ! receiver_plug ) {
-    receiver_plug = app().find_plugin<receiver_plugin>();
-  }
+  get_plug();
   receiver_plug->add_dependency(plug, plugname);
 }
   
+void abort_receiver() {
+  get_plug();
+  receiver_plug->abort_receiver();
+  app().shutdown();
+}
 

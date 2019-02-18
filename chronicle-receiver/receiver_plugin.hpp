@@ -155,7 +155,7 @@ public:
 
   abieos_context* get_contract_abi_ctxt(abieos::name account);
   void add_dependency(appbase::abstract_plugin* plug, string plugname);
-  
+  void abort_receiver();
 private:
   std::unique_ptr<class receiver_plugin_impl> my;
   std::vector<std::tuple<appbase::abstract_plugin*, std::string>> dependent_plugins;
@@ -165,3 +165,4 @@ private:
 
 abieos_context* get_contract_abi_ctxt(abieos::name account);
 void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname);
+void abort_receiver();

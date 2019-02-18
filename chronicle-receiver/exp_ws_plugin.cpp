@@ -91,26 +91,39 @@ public:
   }
 
   void stop() {
-    ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));
-    ws.close(boost::beast::websocket::close_code::normal);
+    if( ws.is_open() ) {
+      ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
+      ws.close(boost::beast::websocket::close_code::normal);
+    }
+    else {
+      ilog("Websocket connection to ${h}:${p} is already closed", ("h",ws_host)("p",ws_port));
+    }      
   }
     
   void on_event(const char* msgtype, std::shared_ptr<string> event) {
-    impl_buffer.Clear();
-    impl_writer.Reset(impl_buffer);
-    impl_writer.StartObject();
-    impl_writer.Key("msgtype");
-    impl_writer.String(msgtype);
-    impl_writer.Key("data");
-    impl_writer.RawValue(event->data(), event->length(), rapidjson::kObjectType);
-    impl_writer.EndObject();
-    boost::asio::const_buffer buf(impl_buffer.GetString(), impl_buffer.GetLength());
-    boost::beast::error_code ec;
-    ws.write(buf, ec);
-    if( ec ) {
-      elog("ERROR: ${e}", ("e",ec.message()));
-      throw std::runtime_error("ec.message()");
-    }    
+    try {
+      try {
+        impl_buffer.Clear();
+        impl_writer.Reset(impl_buffer);
+        impl_writer.StartObject();
+        impl_writer.Key("msgtype");
+        impl_writer.String(msgtype);
+        impl_writer.Key("data");
+        impl_writer.RawValue(event->data(), event->length(), rapidjson::kObjectType);
+        impl_writer.EndObject();
+        boost::asio::const_buffer buf(impl_buffer.GetString(), impl_buffer.GetLength());
+        boost::beast::error_code ec;
+        ws.write(buf, ec);
+        if( ec ) {
+          elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
+          throw std::runtime_error("ec.message()");
+        }
+      }
+      FC_LOG_AND_RETHROW();
+    }
+    catch (...) {
+      abort_receiver();
+    }
   }
 };
 
