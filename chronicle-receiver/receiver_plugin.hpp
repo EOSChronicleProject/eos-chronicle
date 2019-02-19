@@ -153,6 +153,8 @@ public:
   void plugin_startup();
   void plugin_shutdown();
 
+  void exporter_will_confirm_blocks();
+  void confirm_block(uint32_t block_num);
   abieos_context* get_contract_abi_ctxt(abieos::name account);
   void add_dependency(appbase::abstract_plugin* plug, string plugname);
   void abort_receiver();
@@ -162,7 +164,21 @@ private:
   void start_after_dependencies();
 };
 
+// Global functions
 
-abieos_context* get_contract_abi_ctxt(abieos::name account);
+extern receiver_plugin* receiver_plug;
+
+void exporter_initialized();
+
+void exporter_will_confirm_blocks();
+inline void confirm_block(uint32_t block_num) {
+  receiver_plug->confirm_block(block_num);
+}
+
+
 void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname);
 void abort_receiver();
+
+inline abieos_context* get_contract_abi_ctxt(abieos::name account) {
+  return receiver_plug->get_contract_abi_ctxt(account);
+}

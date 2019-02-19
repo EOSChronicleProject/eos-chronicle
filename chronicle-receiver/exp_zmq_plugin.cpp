@@ -124,6 +124,7 @@ void exp_zmq_plugin::plugin_initialize( const variables_map& options ) {
     
     my->init();
     ilog("Initialized exp_zmq_plugin");
+    exporter_initialized();
   }
   FC_LOG_AND_RETHROW();
 }

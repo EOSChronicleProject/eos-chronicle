@@ -198,6 +198,8 @@ public:
   chronicle::channels::abi_errors::channel_type&          _abi_errors_chan;
   chronicle::channels::table_row_updates::channel_type&   _table_row_updates_chan;
 
+  bool                                  exporter_will_confirm = false;
+  uint32_t                              exporter_confirmed_block = 0;
   
   void start() {
     load_state();
@@ -375,16 +377,13 @@ public:
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
 
-    bool srart_undo_session = false;
-    
-    if( block_num <= last_irreversoble_num ) {
-      // we're catching up behind the irreversible
-      db->commit(last_irreversoble_num);
-      db->set_revision(block_num); 
+    if( db->revision() < block_num ) {
+      db->set_revision(block_num);
+      dlog("set DB revision to ${r}", ("r",block_num));
     }
-    else {
-      // we're at the blockchain head
       
+    if( block_num > last_irreversoble_num ) {
+      // we're at the blockchain head
       if (block_num <= head) { //received a block that is lower than what we already saw
         ilog("fork detected at block ${b}; head=${h}", ("b",block_num)("h",head));
         uint32_t depth = head - block_num;
@@ -392,7 +391,8 @@ public:
         while( db->revision() >= block_num ) {
           db->undo();
         }
-        if( db->revision() == -1 ) {
+        dlog("rolled back DB revision to ${r}", ("r",db->revision()));
+        if( db->revision() <= 0 ) {
           throw runtime_error(std::string("Cannot rollback, no undo stack at revision ")+
                               std::to_string(db->revision()));
         }
@@ -405,11 +405,9 @@ public:
       else
         if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
           throw runtime_error("prev_block does not match");
-
-      srart_undo_session = true;
     }
     
-    auto undo_session = db->start_undo_session(srart_undo_session);
+    auto undo_session = db->start_undo_session(true);
 
     if( block_num > irreversible ) {
       // add the new block
@@ -443,9 +441,18 @@ public:
     
     save_state();
     undo_session.push();     // save a new revision
-    db->commit(irreversible);
+
+    // if exporter is confirming, we only commit what is confirmed
+    auto commit_rev = irreversible;
+    if( exporter_will_confirm && exporter_confirmed_block < commit_rev ) {
+      commit_rev = exporter_confirmed_block;
+    }
+    db->commit(commit_rev);
+
     return true;
   }
+
+  
 
 
   
@@ -744,7 +751,10 @@ public:
 
 
 receiver_plugin::receiver_plugin() : my(new receiver_plugin_impl)
-{};
+{
+  assert(receiver_plug == nullptr);
+  receiver_plug = this;
+};
 
 receiver_plugin::~receiver_plugin(){
 };
@@ -761,7 +771,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
 
   
 void receiver_plugin::plugin_initialize( const variables_map& options ) {
-  try {
+  try {    
     if( !options.count("data-dir") ) {
       throw std::runtime_error("--data-dir option is required");
     }
@@ -834,6 +844,17 @@ void receiver_plugin::plugin_shutdown() {
 }
 
 
+void receiver_plugin::exporter_will_confirm_blocks() {
+  assert(!my->exporter_will_confirm);
+  my->exporter_will_confirm = true;
+}
+
+void receiver_plugin::confirm_block(uint32_t block_num) {
+  assert(my->exporter_will_confirm);
+  my->exporter_confirmed_block = block_num;
+}
+
+
 abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
   my->get_contract_abi_ready(account);
   return my->contract_abi_ctxt;
@@ -849,32 +870,29 @@ void receiver_plugin::abort_receiver() {
 }
 
 
-// global implementation of ABI retriever
+static bool have_exporter = false;
 
-static receiver_plugin* receiver_plug = nullptr;
-
-inline void get_plug() {
-  if( !receiver_plug ) {
-    receiver_plug = app().find_plugin<receiver_plugin>();
-  }
+void exporter_initialized() {
+  if( have_exporter )
+    throw runtime_error("Only one exporter plugin is allowed");
+  have_exporter = true;
 }
-  
 
-abieos_context* get_contract_abi_ctxt(abieos::name account) {
-  get_plug();
-  return receiver_plug->get_contract_abi_ctxt(account);
+receiver_plugin* receiver_plug = nullptr;
+
+void exporter_will_confirm_blocks()
+{
+  receiver_plug->exporter_will_confirm_blocks();
 }
 
 // receiver should not start collecting data before all dependent plugins are ready
-
 void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname) {
-  get_plug();
   receiver_plug->add_dependency(plug, plugname);
 }
   
 void abort_receiver() {
-  get_plug();
   receiver_plug->abort_receiver();
   app().shutdown();
 }
+
 
