@@ -11,6 +11,7 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
 
+#include <fc/crypto/hex.hpp>
 #include <fc/log/logger.hpp>
 #include <fc/exception/exception.hpp>
 
@@ -31,7 +32,7 @@ namespace json_encoder {
   };
 
   inline void native_to_json(const std::string& str, native_to_json_state& state) {
-    state.writer.String(str.c_str(), str.size());
+    state.writer.String(str.data(), str.size());
   }
 
   inline void native_to_json(const optional<std::string>& str, native_to_json_state& state) {
@@ -85,25 +86,23 @@ namespace json_encoder {
 
   inline void native_to_json(const chain_state::transaction_status& obj, native_to_json_state& state) {
     std::string result = to_string(obj);
-    state.writer.String(result.c_str(), result.size());
+    state.writer.String(result.data(), result.size());
   }
     
   inline void native_to_json(const name& obj, native_to_json_state& state) {
     std::string result = name_to_string(obj.value);
-    state.writer.String(result.c_str(), result.size());
+    state.writer.String(result.data(), result.size());
   }
   
   inline void native_to_json(const bytes& obj, native_to_json_state& state) {
-    std::string result;
-    boost::algorithm::hex(obj.data.begin(), obj.data.end(), std::back_inserter(result));
-    state.writer.String(result.c_str(), result.size());
+    std::string result = fc::to_hex(obj.data.data(), obj.data.size());
+    state.writer.String(result.data(), result.size());
   }
 
   template <unsigned size>
   inline void native_to_json(const fixed_binary<size>& obj, native_to_json_state& state) {
-    std::string result;
-    boost::algorithm::hex(obj.value.begin(), obj.value.end(), std::back_inserter(result));
-    state.writer.String(result.c_str(), result.size());
+    std::string result = fc::to_hex((const char*)obj.value.data(), obj.value.size());
+    state.writer.String(result.data(), result.size());
   }
   
   inline void native_to_json(const bool& obj, native_to_json_state& state) {
@@ -118,7 +117,7 @@ namespace json_encoder {
   inline void native_to_json(const chain_state::action_trace& obj, native_to_json_state& state) {
     state.writer.StartObject();
     for_each_field((chain_state::action_trace*)nullptr, [&](auto* name, auto member_ptr) {
-        if( string("dummy") == name || string("receipt_dummy") == name ) {
+        if( string("dummy") == name ) {
           return;
         }
         state.writer.Key(name);
@@ -175,8 +174,22 @@ namespace json_encoder {
     state.writer.EndObject();
   }
 
+  
   void native_to_json(const chain_state::recurse_transaction_trace& obj, native_to_json_state& state) {
     const chain_state::transaction_trace& o = obj; native_to_json(o, state);
+  }
+
+  
+  inline void native_to_json(const chain_state::action_receipt& obj, native_to_json_state& state) {
+    state.writer.StartObject();
+    for_each_field((chain_state::action_receipt*)nullptr, [&](auto* name, auto member_ptr) {
+        if( string("dummy") == name ) {
+          return;
+        }
+        state.writer.Key(name);
+        native_to_json(member_from_void(member_ptr, &obj), state);
+      });
+    state.writer.EndObject();
   }
     
 
@@ -428,7 +441,7 @@ public:
       attrs["where"] = "transaction_trace";
       attrs["block_num"] = std::to_string(ccttr->block_num);
       attrs["block_timestamp"] = string(ccttr->block_timestamp);
-      attrs["trx_id"] = string(ccttr->trace.id);
+      attrs["trx_id"] = fc::to_hex((const char*)ccttr->trace.id.value.data(), ccttr->trace.id.value.size());
       report_encoder_errors(encoder_errors, attrs);
     }
   }

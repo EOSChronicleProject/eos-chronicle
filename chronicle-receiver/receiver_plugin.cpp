@@ -653,8 +653,8 @@ public:
           throw runtime_error("transaction_trace conversion error (1)");
         // check blacklist
         bool blacklisted = false;
-        if( tr->trace.action_traces.size() > 0 ) {
-          auto &at = tr->trace.action_traces[0];
+        if( tr->trace.traces.size() > 0 ) {
+          auto &at = tr->trace.traces[0];
           auto search_acc = blacklist_actions.find(at.account);
           if(search_acc != blacklist_actions.end()) {
             if( search_acc->second.count(at.name) != 0 ) {

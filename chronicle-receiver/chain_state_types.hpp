@@ -126,19 +126,35 @@ namespace chain_state {
     f("account", member_ptr<&action_trace_ram_delta::account>{});
     f("delta", member_ptr<&action_trace_ram_delta::delta>{});
   }
+
+  struct action_receipt {
+    variant_header_zero             dummy;    
+    abieos::name                    receiver;
+    checksum256                     act_digest;
+    uint64_t                        global_sequence;
+    uint64_t                        recv_sequence;
+    vector<action_trace_auth_sequence> auth_sequence;
+    varuint32                       code_sequence;
+    varuint32                       abi_sequence;
+   };
+
+  template <typename F>
+  constexpr void for_each_field(action_receipt*, F f) {
+    f("dummy", member_ptr<&action_receipt::dummy>{});
+    f("receiver", member_ptr<&action_receipt::receiver>{});
+    f("act_digest", member_ptr<&action_receipt::act_digest>{});
+    f("global_sequence", member_ptr<&action_receipt::global_sequence>{});
+    f("recv_sequence", member_ptr<&action_receipt::recv_sequence>{});
+    f("auth_sequence", member_ptr<&action_receipt::auth_sequence>{});
+    f("code_sequence", member_ptr<&action_receipt::code_sequence>{});
+    f("abi_sequence", member_ptr<&action_receipt::abi_sequence>{});
+  }
   
   struct recurse_action_trace;
 
   struct action_trace {
     variant_header_zero                dummy;
-    variant_header_zero                receipt_dummy;
-    abieos::name                       receipt_receiver;
-    checksum256                        receipt_act_digest;
-    uint64_t                           receipt_global_sequence;
-    uint64_t                           receipt_recv_sequence;
-    vector<action_trace_auth_sequence> receipt_auth_sequence;
-    varuint32                          receipt_code_sequence;
-    varuint32                          receipt_abi_sequence;
+    action_receipt                     receipt;
     abieos::name                       account;
     abieos::name                       name;
     vector<action_trace_authorization> authorization;
@@ -154,14 +170,7 @@ namespace chain_state {
   template <typename F>
   constexpr void for_each_field(action_trace*, F f) {
     f("dummy", member_ptr<&action_trace::dummy>{});
-    f("receipt_dummy", member_ptr<&action_trace::receipt_dummy>{});
-    f("receipt_receiver", member_ptr<&action_trace::receipt_receiver>{});
-    f("receipt_act_digest", member_ptr<&action_trace::receipt_act_digest>{});
-    f("receipt_global_sequence", member_ptr<&action_trace::receipt_global_sequence>{});
-    f("receipt_recv_sequence", member_ptr<&action_trace::receipt_recv_sequence>{});
-    f("receipt_auth_sequence", member_ptr<&action_trace::receipt_auth_sequence>{});
-    f("receipt_code_sequence", member_ptr<&action_trace::receipt_code_sequence>{});
-    f("receipt_abi_sequence", member_ptr<&action_trace::receipt_abi_sequence>{});
+    f("receipt", member_ptr<&action_trace::receipt>{});
     f("account", member_ptr<&action_trace::account>{});
     f("name", member_ptr<&action_trace::name>{});
     f("authorization", member_ptr<&action_trace::authorization>{});
@@ -190,7 +199,7 @@ namespace chain_state {
     int64_t                           elapsed;
     uint64_t                          net_usage;
     bool                              scheduled;
-    vector<action_trace>              action_traces;
+    vector<action_trace>              traces;
     optional<string>                  except;
     vector<recurse_transaction_trace> failed_dtrx_trace;
   };
@@ -205,7 +214,7 @@ namespace chain_state {
     f("elapsed", member_ptr<&transaction_trace::elapsed>{});
     f("net_usage", member_ptr<&transaction_trace::net_usage>{});
     f("scheduled", member_ptr<&transaction_trace::scheduled>{});
-    f("action_traces", member_ptr<&transaction_trace::action_traces>{});
+    f("traces", member_ptr<&transaction_trace::traces>{});
     f("except", member_ptr<&transaction_trace::except>{});
     f("failed_dtrx_trace", member_ptr<&transaction_trace::failed_dtrx_trace>{});
   }
