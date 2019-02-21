@@ -16,6 +16,7 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/program_options.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/deadline_timer.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -161,7 +162,9 @@ public:
     _abi_updates_chan(app().get_channel<chronicle::channels::abi_updates>()),
     _abi_removals_chan(app().get_channel<chronicle::channels::abi_removals>()),
     _abi_errors_chan(app().get_channel<chronicle::channels::abi_errors>()),
-    _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>())
+    _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>()),
+    _receiver_pauses_chan(app().get_channel<chronicle::channels::receiver_pauses>()),
+    unack_timer(std::ref(app().get_io_service()))
   {};
   
   shared_ptr<chainbase::database>       db;
@@ -197,15 +200,20 @@ public:
   chronicle::channels::abi_removals::channel_type&        _abi_removals_chan;
   chronicle::channels::abi_errors::channel_type&          _abi_errors_chan;
   chronicle::channels::table_row_updates::channel_type&   _table_row_updates_chan;
+  chronicle::channels::receiver_pauses::channel_type&     _receiver_pauses_chan;
 
-  bool                                  exporter_will_confirm = false;
-  uint32_t                              exporter_confirmed_block = 0;
+  bool                                  exporter_will_ack = false;
+  uint32_t                              exporter_acked_block = 0;
+  uint32_t                              exporter_max_unconfirmed;
+  boost::asio::deadline_timer           unack_timer;
+  uint32_t                              pause_time_sec = 0;
+
   
   void start() {
     load_state();
     resolver->async_resolve
       (host, port,
-       [this](error_code ec, tcp::resolver::results_type results) {
+       [this](const error_code ec, tcp::resolver::results_type results) {
         if (ec)
           elog("Error during lookup of ${h}:${p} - ${e}", ("h",host)("p",port)("e", ec.message()));
         
@@ -215,9 +223,9 @@ public:
                stream->next_layer(),
                results.begin(),
                results.end(),
-               [this](error_code ec, auto&) {
+               [this](const error_code ec, auto&) {
                  callback(ec, "connect", [&] {
-                     stream->async_handshake(host, "/", [this](error_code ec) {
+                     stream->async_handshake(host, "/", [this](const error_code ec) {
                          callback(ec, "handshake", [&] {
                              start_read();
                            });
@@ -297,7 +305,7 @@ public:
   
   void start_read() {
     auto in_buffer = make_shared<flat_buffer>();
-    stream->async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
+    stream->async_read(*in_buffer, [this, in_buffer](const error_code ec, size_t) {
         callback(ec, "async_read", [&] {
             receive_abi(in_buffer);
             request_blocks();
@@ -306,17 +314,46 @@ public:
       });
   }
 
+  
+  // if consumer fails to acknowledge on time, we wait and increase the timer up to 32 seconds
   void continue_read() {
-    auto in_buffer = make_shared<flat_buffer>();
-    stream->async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
-        callback(ec, "async_read", [&] {
-            if (!receive_result(in_buffer))
-              return;
+    if( exporter_will_ack && exporter_acked_block > 0 && head - exporter_acked_block >= exporter_max_unconfirmed ) {
+      if( pause_time_sec == 0 ) {
+        pause_time_sec = 1;
+      }
+      else if( pause_time_sec < 32 ) {
+        pause_time_sec *= 2;
+      }
+      pause_read();
+    }
+    else {
+      pause_time_sec = 0;
+      auto in_buffer = make_shared<flat_buffer>();
+      stream->async_read(*in_buffer, [this, in_buffer](const error_code ec, size_t) {
+          callback(ec, "async_read", [&] {
+              if (!receive_result(in_buffer))
+                return;
+              continue_read();
+            });
+        });
+    }
+  }
+
+  
+  void pause_read() {
+    auto rp = std::make_shared<chronicle::channels::receiver_pause>();
+    rp->head = head;
+    rp->acknowledged = exporter_acked_block;
+    _receiver_pauses_chan.publish(rp);
+    ilog("Too many unacknowledged blocks; pausing the reader");
+    unack_timer.expires_from_now(boost::posix_time::seconds(pause_time_sec));
+    unack_timer.async_wait([this](const error_code ec) {
+        callback(ec, "async_wait", [&] {
             continue_read();
           });
       });
   }
-
+  
   
   void receive_abi(const shared_ptr<flat_buffer>& p) {
     auto data = p->data();
@@ -442,10 +479,10 @@ public:
     save_state();
     undo_session.push();     // save a new revision
 
-    // if exporter is confirming, we only commit what is confirmed
+    // if exporter is acknowledging, we only commit what is confirmed
     auto commit_rev = irreversible;
-    if( exporter_will_confirm && exporter_confirmed_block < commit_rev ) {
-      commit_rev = exporter_confirmed_block;
+    if( exporter_will_ack && exporter_acked_block < commit_rev ) {
+      commit_rev = exporter_acked_block;
     }
     db->commit(commit_rev);
 
@@ -466,6 +503,8 @@ public:
          uint64_t size = db->get_segment_manager()->get_size();
          ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
               ("h",head)("i",irreversible)("m", free_bytes*100/size));
+         if( exporter_will_ack )
+           ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
     }
 
     auto block_ptr = std::make_shared<chronicle::channels::block>();
@@ -686,7 +725,7 @@ public:
       throw runtime_error("failed to convert during send");
 
     stream->async_write(asio::buffer(*bin),
-                       [bin, this](error_code ec, size_t) {
+                       [bin, this](const error_code ec, size_t) {
                          callback(ec, "async_write", [&] {}); });
   }
 
@@ -728,13 +767,13 @@ public:
 
   
   template <typename F>
-  void callback(error_code ec, const char* what, F f) {
+  void callback(const error_code ec, const char* what, F f) {
     if (ec)
       return on_fail(ec, what);
     catch_and_close(f);
   }
 
-  void on_fail(error_code ec, const char* what) {
+  void on_fail(const error_code ec, const char* what) {
     try {
       elog("ERROR: ${e}", ("e",ec.message()));
       close();
@@ -844,14 +883,23 @@ void receiver_plugin::plugin_shutdown() {
 }
 
 
-void receiver_plugin::exporter_will_confirm_blocks() {
-  assert(!my->exporter_will_confirm);
-  my->exporter_will_confirm = true;
+void receiver_plugin::exporter_will_ack_blocks(uint32_t max_unconfirmed) {
+  assert(!my->exporter_will_ack);
+  assert(max_unconfirmed > 0);
+  my->exporter_will_ack = true;
+  my->exporter_max_unconfirmed = max_unconfirmed;
+  ilog("Receiver will pause at ${u} unacknowledged blocks", ("u", my->exporter_max_unconfirmed));
 }
 
-void receiver_plugin::confirm_block(uint32_t block_num) {
-  assert(my->exporter_will_confirm);
-  my->exporter_confirmed_block = block_num;
+void receiver_plugin::ack_block(uint32_t block_num) {
+  assert(my->exporter_will_ack);
+  if( block_num < my->exporter_acked_block ) {
+    elog("Exporter acked block=${a}, but block=${k} was already acknowledged",
+         ("a",block_num)("b",my->exporter_acked_block));
+    throw runtime_error("Exporter acked block below prevuously acked one");
+  }
+  my->exporter_acked_block = block_num;
+  //dlog("Acked block=${b}", ("b",block_num));
 }
 
 
@@ -880,9 +928,9 @@ void exporter_initialized() {
 
 receiver_plugin* receiver_plug = nullptr;
 
-void exporter_will_confirm_blocks()
+void exporter_will_ack_blocks(uint32_t max_unconfirmed)
 {
-  receiver_plug->exporter_will_confirm_blocks();
+  receiver_plug->exporter_will_ack_blocks(max_unconfirmed);
 }
 
 // receiver should not start collecting data before all dependent plugins are ready

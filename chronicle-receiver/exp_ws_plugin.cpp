@@ -5,6 +5,7 @@
 #include "receiver_plugin.hpp"
 
 #include <boost/beast/websocket.hpp>
+#include <boost/beast/core.hpp>
 #include <stdexcept>
 	
 #include "rapidjson/reader.h"
@@ -15,11 +16,18 @@
 #include <fc/log/logger.hpp>
 #include <fc/exception/exception.hpp>
 
+using boost::beast::flat_buffer;
+using boost::system::error_code;
+using std::make_shared;
+
+
 static appbase::abstract_plugin& _exp_ws_plugin = app().register_plugin<exp_ws_plugin>();
 
 namespace {
   const char* WS_HOST_OPT = "exp-ws-host";
   const char* WS_PORT_OPT = "exp-ws-port";
+  const char* WS_ACK_OPT = "exp-ws-ack";
+  const char* WS_MAXUNACK_OPT = "exp-ws-max-unack";
 }
 
 class exp_ws_plugin_impl : std::enable_shared_from_this<exp_ws_plugin_impl> {
@@ -31,11 +39,13 @@ public:
   chronicle::channels::js_abi_removals::channel_type::handle        _js_abi_removals_subscription;
   chronicle::channels::js_abi_errors::channel_type::handle          _js_abi_errors_subscription;
   chronicle::channels::js_table_row_updates::channel_type::handle   _js_table_row_updates_subscription;
+  chronicle::channels::js_receiver_pauses::channel_type::handle     _js_receiver_pauses_subscription;
   chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
 
   string ws_host;
   string ws_port;
   boost::beast::websocket::stream<boost::asio::ip::tcp::socket> ws;
+  bool send_acks = false;
 
   rapidjson::StringBuffer impl_buffer;
   rapidjson::Writer<rapidjson::StringBuffer> impl_writer;
@@ -75,10 +85,15 @@ public:
       app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
       ([this](std::shared_ptr<string> event){ on_event("TBL_ROW", event); });
 
+    _js_receiver_pauses_subscription =
+      app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
+      ([this](std::shared_ptr<string> event){ on_event("RCVR_PAUSE", event); });
+    
     _js_abi_decoder_errors_subscription =
       app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
       ([this](std::shared_ptr<string> event){ on_event("ENCODER_ERR", event); });
   }
+
 
   void start() {
     ilog("Connecting to websocket server ${h}:${p}", ("h",ws_host)("p",ws_port));
@@ -88,7 +103,10 @@ public:
     boost::asio::connect(ws.next_layer(), results.begin(), results.end());
     ws.handshake(ws_host, "/");
     ilog("Connected");
+    if( send_acks )
+      read_acks();
   }
+
 
   void stop() {
     if( ws.is_open() ) {
@@ -99,7 +117,25 @@ public:
       ilog("Websocket connection to ${h}:${p} is already closed", ("h",ws_host)("p",ws_port));
     }      
   }
-    
+
+  
+  void read_acks() {
+    auto in_buffer = std::make_shared<flat_buffer>();
+    ws.async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
+        if (ec)
+          abort_receiver();
+        else {
+          const auto in_data = in_buffer->data();
+          uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
+          if( ack > UINT32_MAX )
+            throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
+          ack_block(ack);
+          read_acks();
+        }
+      });
+  }
+
+  
   void on_event(const char* msgtype, std::shared_ptr<string> event) {
     try {
       try {
@@ -140,6 +176,8 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
   cfg.add_options()
     (WS_HOST_OPT, bpo::value<string>(), "Websocket server host to connect to")
     (WS_PORT_OPT, bpo::value<string>(), "Websocket server port to connect to")
+    (WS_ACK_OPT, bpo::value<bool>()->default_value(false), "Websocket consumer will acknowledge processed blocks")
+    (WS_MAXUNACK_OPT, bpo::value<uint32_t>()->default_value(1000), "Receiver will pause at so many unacknowledged blocks")
     ;
 }
 
@@ -164,6 +202,19 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     my->ws_host = options.at(WS_HOST_OPT).as<string>();
     my->ws_port = options.at(WS_PORT_OPT).as<string>();
 
+    if( options.count(WS_ACK_OPT) > 0 ) {
+      if( options.at(WS_ACK_OPT).as<bool>() ) {
+        my->send_acks = true;
+        uint32_t maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
+        if( maxunack == 0 )
+          throw std::runtime_error("Maximum unacked blocks must be a positive integer");
+        exporter_will_ack_blocks(maxunack);
+      }
+    }
+
+    ilog("exp_ws_plugin is configured ${c} send acks to the receiver",
+         ("c", my->send_acks?"to":"not to"));
+    
     my->init();    
     ilog("Initialized exp_ws_plugin");
     exporter_initialized();

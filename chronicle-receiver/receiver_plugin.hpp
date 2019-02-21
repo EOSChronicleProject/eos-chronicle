@@ -138,6 +138,19 @@ namespace chronicle {
     }
     
     using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
+
+    struct receiver_pause {
+      uint32_t                           head;
+      uint32_t                           acknowledged;
+    };
+
+    template <typename F>
+    constexpr void for_each_field(receiver_pause*, F f) {
+      f("head", member_ptr<&receiver_pause::head>{});
+      f("acknowledged", member_ptr<&receiver_pause::acknowledged>{});
+    }
+    
+    using receiver_pauses = channel_decl<struct receiver_pauses_tag, std::shared_ptr<receiver_pause>>;
   }
 }
   
@@ -153,8 +166,8 @@ public:
   void plugin_startup();
   void plugin_shutdown();
 
-  void exporter_will_confirm_blocks();
-  void confirm_block(uint32_t block_num);
+  void exporter_will_ack_blocks(uint32_t max_unconfirmed);
+  void ack_block(uint32_t block_num);
   abieos_context* get_contract_abi_ctxt(abieos::name account);
   void add_dependency(appbase::abstract_plugin* plug, string plugname);
   void abort_receiver();
@@ -170,9 +183,10 @@ extern receiver_plugin* receiver_plug;
 
 void exporter_initialized();
 
-void exporter_will_confirm_blocks();
-inline void confirm_block(uint32_t block_num) {
-  receiver_plug->confirm_block(block_num);
+void exporter_will_ack_blocks(uint32_t max_unconfirmed);
+
+inline void ack_block(uint32_t block_num) {
+  receiver_plug->ack_block(block_num);
 }
 
 

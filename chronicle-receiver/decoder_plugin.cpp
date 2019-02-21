@@ -331,6 +331,7 @@ public:
     _js_abi_removals_chan(app().get_channel<chronicle::channels::js_abi_removals>()),
     _js_abi_errors_chan(app().get_channel<chronicle::channels::js_abi_errors>()),
     _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>()),
+    _js_receiver_pauses_chan(app().get_channel<chronicle::channels::js_receiver_pauses>()),
     _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>()),
     impl_buffer(0, 262144)
   {}
@@ -342,8 +343,9 @@ public:
   chronicle::channels::js_abi_removals::channel_type&        _js_abi_removals_chan;
   chronicle::channels::js_abi_errors::channel_type&          _js_abi_errors_chan;
   chronicle::channels::js_table_row_updates::channel_type&   _js_table_row_updates_chan;
+  chronicle::channels::js_receiver_pauses::channel_type&     _js_receiver_pauses_chan;
   chronicle::channels::js_abi_decoder_errors::channel_type&  _js_abi_decoder_errors_chan;
-
+  
   chronicle::channels::forks::channel_type::handle               _forks_subscription;
   chronicle::channels::blocks::channel_type::handle              _blocks_subscription;
   chronicle::channels::transaction_traces::channel_type::handle  _transaction_traces_subscription;
@@ -351,6 +353,7 @@ public:
   chronicle::channels::abi_removals::channel_type::handle        _abi_removals_subscription;
   chronicle::channels::abi_updates::channel_type::handle         _abi_updates_subscription;
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
+  chronicle::channels::receiver_pauses::channel_type::handle     _receiver_pauses_subscription;
 
   // A static copy of JSON writer buffer in order to avoid reallocation
   rapidjson::StringBuffer impl_buffer;
@@ -415,6 +418,13 @@ public:
         app().get_channel<chronicle::channels::table_row_updates>().subscribe
         ([this](std::shared_ptr<chronicle::channels::table_row_update> trupd){
           on_table_row_update(trupd);
+        });
+    }
+    if (_js_receiver_pauses_chan.has_subscribers()) {
+      _receiver_pauses_subscription =
+        app().get_channel<chronicle::channels::receiver_pauses>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::receiver_pause> rp){
+          on_receiver_pause(rp);
         });
     }
   }
@@ -483,6 +493,14 @@ public:
     }
   }
 
+  
+  void on_receiver_pause(std::shared_ptr<chronicle::channels::receiver_pause> rp) {
+    auto output = make_shared<string>();
+    impl_native_to_json(*rp, *output);
+    _js_receiver_pauses_chan.publish(output);
+  }
+    
+  
   inline void report_encoder_errors(vector<string>& encoder_errors, map<string, string>& attrs) {
     rapidjson::StringBuffer buffer(0, 1024);;
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};

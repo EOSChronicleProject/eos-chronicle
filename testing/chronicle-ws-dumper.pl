@@ -14,21 +14,26 @@ use Net::WebSocket::Server;
 $| = 1;
 
 my $port = 8800;
+my $ack;
 
 my $ok = GetOptions
-    ('port=i' => \$port);
+    ('port=i' => \$port,
+     'ack=i' => \$ack);
 
 
 if( not $ok or scalar(@ARGV) > 0 )
 {
     print STDERR "Usage: $0 [options...]\n",
     "Options:\n",
-    "  --port=N        \[$port\] TCP port to listen to websocket connection\n";
+    "  --port=N        \[$port\] TCP port to listen to websocket connection\n",
+    "  --ack=N         Send acknowledgements every N seconds\n";
     exit 1;
 }
 
 
 my $json = JSON->new->pretty->canonical;
+my $last_ack = time();
+my $last_block = 0;
 
 Net::WebSocket::Server->new(
     listen => $port,
@@ -45,6 +50,24 @@ Net::WebSocket::Server->new(
                     exit;
                 } 
                 print $json->encode($data), "\n\n";
+                if( defined($ack) )
+                {
+                    my $type = $data->{'msgtype'};
+                    
+                    if( $type eq 'BLOCK' )
+                    {
+                        $last_block = $data->{'data'}{'block_num'};
+                    }
+                    
+                    if( $type eq 'BLOCK'  or $type eq 'RCVR_PAUSE' )
+                    {
+                        if( time() - $last_ack >= $ack )
+                        {
+                            $last_ack = time();
+                            $conn->send_binary(sprintf("%d", $last_block));
+                        }
+                    }
+                }
             },
             );
     },
