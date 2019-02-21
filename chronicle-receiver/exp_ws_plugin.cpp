@@ -4,8 +4,10 @@
 #include "decoder_plugin.hpp"
 #include "receiver_plugin.hpp"
 
+#include <queue>
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/core.hpp>
+#include <boost/lockfree/queue.hpp>
 #include <stdexcept>
 	
 #include "rapidjson/reader.h"
@@ -44,18 +46,26 @@ public:
 
   string ws_host;
   string ws_port;
+  bool async_mode = false;
   boost::beast::websocket::stream<boost::asio::ip::tcp::socket> ws;
-  bool send_acks = false;
 
-  rapidjson::StringBuffer impl_buffer;
-  rapidjson::Writer<rapidjson::StringBuffer> impl_writer;
+  rapidjson::StringBuffer json_buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> json_writer;
+
+  std::queue<string> async_queue;
+  string async_msg;
+  boost::asio::const_buffer async_out_buffer;
+  boost::asio::deadline_timer mytimer;
+  uint32_t pause_time_msec = 0;
 
   exp_ws_plugin_impl():
-    ws(std::ref(app().get_io_service()))
+    ws(std::ref(app().get_io_service())),
+    mytimer(std::ref(app().get_io_service()))
   {};
 
   void init() {
-    impl_buffer.Reserve(1024*256);
+    json_buffer.Reserve(1024*256);
+      
 
     _js_forks_subscription =
       app().get_channel<chronicle::channels::js_forks>().subscribe
@@ -103,28 +113,45 @@ public:
     boost::asio::connect(ws.next_layer(), results.begin(), results.end());
     ws.handshake(ws_host, "/");
     ilog("Connected");
-    if( send_acks )
-      read_acks();
+    if( async_mode ) {
+      async_read_acks();
+      async_send_events();
+    }
   }
 
 
   void stop() {
+    close_ws(boost::beast::websocket::close_code::normal);
+  }
+  
+  
+  void close_ws(boost::beast::websocket::close_reason reason) {
     if( ws.is_open() ) {
       ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
-      ws.close(boost::beast::websocket::close_code::normal);
+      if( async_mode ) {
+        ws.async_close(reason, [&](error_code ec) {
+            if (ec) elog(ec.message());
+            abort_receiver();
+          });
+      }
+      else {
+        ws.close(reason);
+        abort_receiver();
+      }
     }
     else {
       ilog("Websocket connection to ${h}:${p} is already closed", ("h",ws_host)("p",ws_port));
-    }      
+      abort_receiver();
+    }
   }
-
+    
+      
   
-  void read_acks() {
+  void async_read_acks() {
     auto in_buffer = std::make_shared<flat_buffer>();
     ws.async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
         if (ec) {
-          ws.close(boost::beast::websocket::close_code::unknown_data);
-          abort_receiver();
+          close_ws(boost::beast::websocket::close_code::unknown_data);
         }
         else {
           const auto in_data = in_buffer->data();
@@ -132,29 +159,69 @@ public:
           if( ack > UINT32_MAX )
             throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
           ack_block(ack);
-          read_acks();
+          async_read_acks();
         }
       });
   }
 
+
+  void async_send_events() {
+    if( async_queue.empty() ) {
+      if( pause_time_msec == 0 ) {
+        pause_time_msec = 5;
+      }
+      else if( pause_time_msec < 256 ) {
+        pause_time_msec *= 2;
+      }
+
+      mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
+      mytimer.async_wait([this](const error_code ec) {
+          async_send_events();
+        });
+    }
+    else {
+      pause_time_msec = 0;
+      async_msg = async_queue.front();
+      async_queue.pop();
+      async_out_buffer = boost::asio::const_buffer(async_msg.data(), async_msg.size());
+      ws.async_write(async_out_buffer, [this](error_code ec, size_t) {
+          if (ec) {
+            close_ws(boost::beast::websocket::close_code::unknown_data);
+          }
+          else {
+            async_send_events();
+          }
+        });
+    }
+  }
+            
+          
+      
   
   void on_event(const char* msgtype, std::shared_ptr<string> event) {
     try {
       try {
-        impl_buffer.Clear();
-        impl_writer.Reset(impl_buffer);
-        impl_writer.StartObject();
-        impl_writer.Key("msgtype");
-        impl_writer.String(msgtype);
-        impl_writer.Key("data");
-        impl_writer.RawValue(event->data(), event->length(), rapidjson::kObjectType);
-        impl_writer.EndObject();
-        boost::asio::const_buffer buf(impl_buffer.GetString(), impl_buffer.GetLength());
-        boost::beast::error_code ec;
-        ws.write(buf, ec);
-        if( ec ) {
-          elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
-          throw std::runtime_error("ec.message()");
+        json_buffer.Clear();
+        json_writer.Reset(json_buffer);
+        json_writer.StartObject();
+        json_writer.Key("msgtype");
+        json_writer.String(msgtype);
+        json_writer.Key("data");
+        json_writer.RawValue(event->data(), event->length(), rapidjson::kObjectType);
+        json_writer.EndObject();
+
+        if( async_mode ) {
+          string msg(json_buffer.GetString());
+          async_queue.push(msg);
+        }
+        else {
+          boost::asio::const_buffer buf(json_buffer.GetString(), json_buffer.GetLength());
+          boost::beast::error_code ec;
+          ws.write(buf, ec);
+          if( ec ) {
+            elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
+            throw std::runtime_error("ec.message()");
+          }
         }
       }
       FC_LOG_AND_RETHROW();
@@ -206,7 +273,7 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
 
     if( options.count(WS_ACK_OPT) > 0 ) {
       if( options.at(WS_ACK_OPT).as<bool>() ) {
-        my->send_acks = true;
+        my->async_mode = true;
         uint32_t maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
         if( maxunack == 0 )
           throw std::runtime_error("Maximum unacked blocks must be a positive integer");
@@ -215,7 +282,7 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     }
 
     ilog("exp_ws_plugin is configured ${c} send acks to the receiver",
-         ("c", my->send_acks?"to":"not to"));
+         ("c", my->async_mode?"to":"not to"));
     
     my->init();    
     ilog("Initialized exp_ws_plugin");

@@ -164,7 +164,7 @@ public:
     _abi_errors_chan(app().get_channel<chronicle::channels::abi_errors>()),
     _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>()),
     _receiver_pauses_chan(app().get_channel<chronicle::channels::receiver_pauses>()),
-    unack_timer(std::ref(app().get_io_service()))
+    mytimer(std::ref(app().get_io_service()))
   {};
   
   shared_ptr<chainbase::database>       db;
@@ -205,7 +205,7 @@ public:
   bool                                  exporter_will_ack = false;
   uint32_t                              exporter_acked_block = 0;
   uint32_t                              exporter_max_unconfirmed;
-  boost::asio::deadline_timer           unack_timer;
+  boost::asio::deadline_timer           mytimer;
   uint32_t                              pause_time_sec = 0;
 
   
@@ -346,8 +346,8 @@ public:
     rp->acknowledged = exporter_acked_block;
     _receiver_pauses_chan.publish(rp);
     ilog("Too many unacknowledged blocks; pausing the reader");
-    unack_timer.expires_from_now(boost::posix_time::seconds(pause_time_sec));
-    unack_timer.async_wait([this](const error_code ec) {
+    mytimer.expires_from_now(boost::posix_time::seconds(pause_time_sec));
+    mytimer.async_wait([this](const error_code ec) {
         callback(ec, "async_wait", [&] {
             continue_read();
           });
@@ -498,7 +498,7 @@ public:
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
       
-    if (head % 10000 == 0) {
+    if (head % 1000 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
          ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
@@ -783,7 +783,9 @@ public:
   }
 
   void close() {
-    stream->next_layer().close();
+    if( stream->is_open() ) {
+      stream->next_layer().close();
+    }
   }
 };
 
@@ -862,8 +864,8 @@ void receiver_plugin::start_after_dependencies() {
   
   if( mustwait ) {
     ilog("Waiting for dependent plugins");
-    boost::asio::deadline_timer t(std::ref(app().get_io_service()), boost::posix_time::seconds(1));
-    t.async_wait(boost::bind(&receiver_plugin::start_after_dependencies, this));
+    my->mytimer.expires_from_now(boost::posix_time::seconds(1));
+    my->mytimer.async_wait(boost::bind(&receiver_plugin::start_after_dependencies, this));
   }
   else {
     ilog("All dependent plugins started, launching the receiver");
