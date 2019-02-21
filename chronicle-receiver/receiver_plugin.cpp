@@ -498,7 +498,7 @@ public:
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
       
-    if (head % 1000 == 0) {
+    if (head % 10000 == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
          ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
