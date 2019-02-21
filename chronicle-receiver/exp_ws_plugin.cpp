@@ -122,8 +122,10 @@ public:
   void read_acks() {
     auto in_buffer = std::make_shared<flat_buffer>();
     ws.async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
-        if (ec)
+        if (ec) {
+          ws.close(boost::beast::websocket::close_code::unknown_data);
           abort_receiver();
+        }
         else {
           const auto in_data = in_buffer->data();
           uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
