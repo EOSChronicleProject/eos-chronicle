@@ -783,7 +783,7 @@ public:
   }
 
   void close() {
-    if( stream->is_open() ) {
+    if( stream.use_count() > 0 && stream->is_open() ) {
       stream->next_layer().close();
     }
   }
@@ -915,8 +915,10 @@ void receiver_plugin::add_dependency(appbase::abstract_plugin* plug, string plug
 }
 
 void receiver_plugin::abort_receiver() {
-  my->close();
-  my->aborting = true;
+  if( my ) {
+    my->close();
+    my->aborting = true;
+  }
 }
 
 
