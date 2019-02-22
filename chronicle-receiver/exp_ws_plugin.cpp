@@ -140,7 +140,6 @@ public:
       }
     }
     else {
-      ilog("Websocket connection to ${h}:${p} is already closed", ("h",ws_host)("p",ws_port));
       abort_receiver();
     }
   }
@@ -186,6 +185,7 @@ public:
       async_out_buffer = boost::asio::const_buffer(async_msg.data(), async_msg.size());
       ws.async_write(async_out_buffer, [this](error_code ec, size_t) {
           if (ec) {
+            elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
             close_ws(boost::beast::websocket::close_code::unknown_data);
           }
           else {
@@ -220,7 +220,7 @@ public:
           ws.write(buf, ec);
           if( ec ) {
             elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
-            throw std::runtime_error("ec.message()");
+            throw std::runtime_error(ec.message());
           }
         }
       }
