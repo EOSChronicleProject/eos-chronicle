@@ -69,6 +69,11 @@ Net::WebSocket::Server->new(
                     }
                 }
             },
+            'disconnect' => sub {
+                my ($conn, $code) = @_;
+                print STDERR "Disconnected: $code\n";
+            },
+            
             );
     },
     )->start;
