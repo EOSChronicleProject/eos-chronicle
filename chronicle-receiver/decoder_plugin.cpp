@@ -89,6 +89,11 @@ namespace json_encoder {
     state.writer.String(result.data(), result.size());
   }
     
+  inline void native_to_json(const chronicle::channels::fork_reason_val& obj, native_to_json_state& state) {
+    std::string result = to_string(obj);
+    state.writer.String(result.data(), result.size());
+  }
+
   inline void native_to_json(const name& obj, native_to_json_state& state) {
     std::string result = name_to_string(obj.value);
     state.writer.String(result.data(), result.size());

@@ -265,6 +265,7 @@ public:
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->fork_block_num = head;
       fe->depth = depth;
+      fe->fork_reason = chronicle::channels::fork_reason_val::restart;
       _forks_chan.publish(fe);
     }
     
@@ -437,6 +438,7 @@ public:
         auto fe = std::make_shared<chronicle::channels::fork_event>();
         fe->fork_block_num = block_num;
         fe->depth = depth;
+        fe->fork_reason = chronicle::channels::fork_reason_val::network;
         _forks_chan.publish(fe);
       }
       else

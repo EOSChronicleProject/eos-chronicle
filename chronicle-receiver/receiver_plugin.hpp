@@ -12,15 +12,30 @@ namespace chronicle {
 
     using namespace abieos;
     
+    enum class fork_reason_val : uint8_t {
+      network  = 1, // fork occurred in the EOSIO network
+      restart = 2, // explicit fork on receiver restart
+    };
+    
+    inline string to_string(fork_reason_val reason) {
+      switch (reason) {
+      case fork_reason_val::network: return "network";
+      case fork_reason_val::restart: return "restart";
+      }
+      return "unknown";
+    }
+    
     struct fork_event {
-      uint32_t    fork_block_num;
-      uint32_t    depth;
+      uint32_t         fork_block_num;
+      uint32_t         depth;
+      fork_reason_val  fork_reason;
     };
     
     template <typename F>
     constexpr void for_each_field(fork_event*, F f) {
       f("block_num", member_ptr<&fork_event::fork_block_num>{});
       f("depth", member_ptr<&fork_event::depth>{});
+      f("fork_reason", member_ptr<&fork_event::fork_reason>{});
     }
     
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
