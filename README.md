@@ -72,6 +72,25 @@ The primary job of `chronicle-receiver` is as follows:
   processed block numbers.
 
 
+## State database
+
+`chronicle-receiver` utilizes `chainbase`, the same shared-memory
+database library that is used by `nodeos`, to store its state. This
+results in the same behavior as with `nodeos`:
+
+* pre-allocated shared memory file is sparse and mostly empty;
+
+* in case of abnormal termination, the shared memory file becomes dirty
+  and unusable.
+
+The state database keeps track of block numbers being processed, and it
+stores also ABI for all contracts that it detects from `setabi`
+actions. Chainbase is maintaining the history of revisions down to the
+unacknowledged or irreversible block, in order to be able to roll back
+in case of a fork or in case of receiver restart.
+
+
+
 ## ZMQ exporter plugin
 
 `exp_zmq_plugin` is only supporting unidirectional mode.
