@@ -108,6 +108,8 @@ cmake ..
 make
 
 
+`examples/exp-dummy-plugin` explains how to add and compile your own plugin to `chronicle-receiver`.
+
 
 
 ## Souce code, license and copyright

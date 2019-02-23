@@ -58,11 +58,14 @@ add_executable(chronicle-receiver
   chronicle-receiver/exp_zmq_plugin.cpp
 )
 
-target_include_directories(chronicle-receiver
-  PUBLIC external/abieos/src external/abieos/external/rapidjson/include 
+include_directories(
+  chronicle-receiver
+  external/appbase/include
+  external/abieos/src
+  external/abieos/external/rapidjson/include 
   external/chainbase/include
   external/fc/include
-  PRIVATE ${Boost_INCLUDE_DIR})
+  ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver
   PRIVATE chainbase appbase fc
@@ -72,3 +75,26 @@ target_link_libraries(chronicle-receiver
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(chronicle-receiver PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
 endif()
+
+
+
+## Infrastructure for third-party plugins
+
+macro(chronicle_receiver_additional_plugin)
+  set(ADDITIONAL_PLUGINS_TARGET "${ADDITIONAL_PLUGINS_TARGET};${ARGN}" PARENT_SCOPE)
+endmacro()
+
+set(whole_archive_flag "--whole-archive")
+set(no_whole_archive_flag "--no-whole-archive")
+
+foreach(ADDITIONAL_PLUGIN_SOURCE_DIR ${CHRONICLE_RECEIVER_ADDITIONAL_PLUGINS})
+  string(UUID ADDITIONAL_PLUGIN_SOURCE_DIR_MD5 NAMESPACE
+    "00000000-0000-0000-0000-000000000000" NAME ${ADDITIONAL_PLUGIN_SOURCE_DIR} TYPE MD5)
+  message(STATUS "[Additional Plugin] ${ADDITIONAL_PLUGIN_SOURCE_DIR} => ${CMAKE_BINARY_DIR}/additional_plugins/${ADDITIONAL_PLUGIN_SOURCE_DIR_MD5}")
+  add_subdirectory(${ADDITIONAL_PLUGIN_SOURCE_DIR} ${CMAKE_BINARY_DIR}/additional_plugins/${ADDITIONAL_PLUGIN_SOURCE_DIR_MD5})
+endforeach()
+
+foreach(ADDITIONAL_PLUGIN_TARGET ${ADDITIONAL_PLUGINS_TARGET})
+  target_link_libraries(chronicle-receiver PRIVATE -Wl,${whole_archive_flag} ${ADDITIONAL_PLUGIN_TARGET} -Wl,${no_whole_archive_flag} )
+endforeach()
+
