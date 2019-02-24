@@ -57,6 +57,7 @@ public:
   boost::asio::const_buffer async_out_buffer;
   boost::asio::deadline_timer mytimer;
   uint32_t pause_time_msec = 0;
+  uint32_t prev_ack_reported = 0;
 
   exp_ws_plugin_impl():
     ws(std::ref(app().get_io_service())),
@@ -158,6 +159,10 @@ public:
           if( ack > UINT32_MAX )
             throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
           ack_block(ack);
+          if( ack - prev_ack_reported > 10000 ) {
+            ilog("exp_ws_plugin queue_size=${q}", ("q",async_queue.size()));
+            prev_ack_reported = ack;
+          }
           async_read_acks();
         }
       });
