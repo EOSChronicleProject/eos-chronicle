@@ -30,6 +30,7 @@ namespace {
   const char* WS_PORT_OPT = "exp-ws-port";
   const char* WS_ACK_OPT = "exp-ws-ack";
   const char* WS_MAXUNACK_OPT = "exp-ws-max-unack";
+  const char* WS_MAXQUEUE_OPT = "exp-ws-max-queue";
 }
 
 class exp_ws_plugin_impl : std::enable_shared_from_this<exp_ws_plugin_impl> {
@@ -53,6 +54,7 @@ public:
   rapidjson::Writer<rapidjson::StringBuffer> json_writer;
 
   std::queue<string> async_queue;
+  uint32_t queue_maxsize;
   string async_msg;
   boost::asio::const_buffer async_out_buffer;
   boost::asio::deadline_timer mytimer;
@@ -186,6 +188,8 @@ public:
     }
     else {
       pause_time_msec = 0;
+      if( async_queue.size() > queue_maxsize )
+        slowdown_receiver();
       async_msg = async_queue.front();
       async_queue.pop();
       async_out_buffer = boost::asio::const_buffer(async_msg.data(), async_msg.size());
@@ -253,6 +257,7 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
     (WS_PORT_OPT, bpo::value<string>(), "Websocket server port to connect to")
     (WS_ACK_OPT, bpo::value<bool>()->default_value(false), "Websocket consumer will acknowledge processed blocks")
     (WS_MAXUNACK_OPT, bpo::value<uint32_t>()->default_value(1000), "Receiver will pause at so many unacknowledged blocks")
+    (WS_MAXQUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Receiver will pause if outbound queue exceeds this limit")
     ;
 }
 
@@ -284,6 +289,9 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
         if( maxunack == 0 )
           throw std::runtime_error("Maximum unacked blocks must be a positive integer");
         exporter_will_ack_blocks(maxunack);
+        my->queue_maxsize = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
+        if( my->queue_maxsize == 0 )
+          throw std::runtime_error("Maximum queue size must be a positive integer");
       }
     }
 

@@ -183,6 +183,7 @@ public:
 
   void exporter_will_ack_blocks(uint32_t max_unconfirmed);
   void ack_block(uint32_t block_num);
+  void slowdown();
   abieos_context* get_contract_abi_ctxt(abieos::name account);
   void add_dependency(appbase::abstract_plugin* plug, string plugname);
   void abort_receiver();
@@ -202,6 +203,10 @@ void exporter_will_ack_blocks(uint32_t max_unconfirmed);
 
 inline void ack_block(uint32_t block_num) {
   receiver_plug->ack_block(block_num);
+}
+
+inline void slowdown_receiver() {
+  receiver_plug->slowdown();
 }
 
 

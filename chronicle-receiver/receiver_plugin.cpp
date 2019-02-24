@@ -207,6 +207,7 @@ public:
   uint32_t                              exporter_max_unconfirmed;
   boost::asio::deadline_timer           mytimer;
   uint32_t                              pause_time_msec = 0;
+  bool                                  slowdown_requested = false;
 
   
   void start() {
@@ -318,16 +319,7 @@ public:
   
   // if consumer fails to acknowledge on time, we wait and increase the timer up to 32 seconds
   void continue_read() {
-    if( exporter_will_ack && exporter_acked_block > 0 && head - exporter_acked_block >= exporter_max_unconfirmed ) {
-      if( pause_time_msec == 0 ) {
-        pause_time_msec = 100;
-      }
-      else if( pause_time_msec < 25600 ) {
-        pause_time_msec *= 2;
-      }
-      pause_read();
-    }
-    else {
+    if( check_pause() ) {
       pause_time_msec = 0;
       auto in_buffer = make_shared<flat_buffer>();
       stream->async_read(*in_buffer, [this, in_buffer](const error_code ec, size_t) {
@@ -341,20 +333,37 @@ public:
   }
 
   
-  void pause_read() {
-    if( pause_time_msec >= 2000 ) {
-      auto rp = std::make_shared<chronicle::channels::receiver_pause>();
-      rp->head = head;
-      rp->acknowledged = exporter_acked_block;
-      _receiver_pauses_chan.publish(rp);
-      ilog("Too many unacknowledged blocks; pausing the reader");
+  bool check_pause() {
+    if( slowdown_requested || 
+        (exporter_will_ack && exporter_acked_block > 0 &&
+         head - exporter_acked_block >= exporter_max_unconfirmed) ) {
+      
+      slowdown_requested = false;
+      
+      if( pause_time_msec == 0 ) {
+        pause_time_msec = 100;
+      }
+      else if( pause_time_msec < 25600 ) {
+        pause_time_msec *= 2;
+      }
+
+      if( pause_time_msec >= 2000 ) {
+        auto rp = std::make_shared<chronicle::channels::receiver_pause>();
+        rp->head = head;
+        rp->acknowledged = exporter_acked_block;
+        _receiver_pauses_chan.publish(rp);
+        ilog("Pausing the reader");
+      }
+      
+      mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
+      mytimer.async_wait([this](const error_code ec) {
+          callback(ec, "async_wait", [&] {
+              continue_read();
+            });
+        });
+      return false;
     }
-    mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
-    mytimer.async_wait([this](const error_code ec) {
-        callback(ec, "async_wait", [&] {
-            continue_read();
-          });
-      });
+    return true;
   }
   
   
@@ -908,6 +917,9 @@ void receiver_plugin::ack_block(uint32_t block_num) {
   //dlog("Acked block=${b}", ("b",block_num));
 }
 
+void receiver_plugin::slowdown() {
+  my->slowdown_requested = true;
+}
 
 abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
   my->get_contract_abi_ready(account);
