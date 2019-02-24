@@ -206,7 +206,7 @@ public:
   uint32_t                              exporter_acked_block = 0;
   uint32_t                              exporter_max_unconfirmed;
   boost::asio::deadline_timer           mytimer;
-  uint32_t                              pause_time_sec = 0;
+  uint32_t                              pause_time_msec = 0;
 
   
   void start() {
@@ -319,16 +319,16 @@ public:
   // if consumer fails to acknowledge on time, we wait and increase the timer up to 32 seconds
   void continue_read() {
     if( exporter_will_ack && exporter_acked_block > 0 && head - exporter_acked_block >= exporter_max_unconfirmed ) {
-      if( pause_time_sec == 0 ) {
-        pause_time_sec = 1;
+      if( pause_time_msec == 0 ) {
+        pause_time_msec = 100;
       }
-      else if( pause_time_sec < 32 ) {
-        pause_time_sec *= 2;
+      else if( pause_time_msec < 25600 ) {
+        pause_time_msec *= 2;
       }
       pause_read();
     }
     else {
-      pause_time_sec = 0;
+      pause_time_msec = 0;
       auto in_buffer = make_shared<flat_buffer>();
       stream->async_read(*in_buffer, [this, in_buffer](const error_code ec, size_t) {
           callback(ec, "async_read", [&] {
@@ -342,12 +342,14 @@ public:
 
   
   void pause_read() {
-    auto rp = std::make_shared<chronicle::channels::receiver_pause>();
-    rp->head = head;
-    rp->acknowledged = exporter_acked_block;
-    _receiver_pauses_chan.publish(rp);
-    ilog("Too many unacknowledged blocks; pausing the reader");
-    mytimer.expires_from_now(boost::posix_time::seconds(pause_time_sec));
+    if( pause_time_msec >= 2000 ) {
+      auto rp = std::make_shared<chronicle::channels::receiver_pause>();
+      rp->head = head;
+      rp->acknowledged = exporter_acked_block;
+      _receiver_pauses_chan.publish(rp);
+      ilog("Too many unacknowledged blocks; pausing the reader");
+    }
+    mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
     mytimer.async_wait([this](const error_code ec) {
         callback(ec, "async_wait", [&] {
             continue_read();
