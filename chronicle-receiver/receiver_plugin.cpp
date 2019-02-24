@@ -58,6 +58,12 @@ using asio::ip::tcp;
 using boost::beast::flat_buffer;
 using boost::system::error_code;
 
+namespace {
+  const char* RCV_HOST_OPT = "host";
+  const char* RCV_PORT_OPT = "port";
+  const char* RCV_SKIP_OPT = "skip-to";
+  const char* RCV_DBSIZE_OPT = "receiver-state-db-size";
+}
 
 
 // decoder state database objects
@@ -816,10 +822,10 @@ receiver_plugin::~receiver_plugin(){
 
 void receiver_plugin::set_program_options( options_description& cli, options_description& cfg ) {
   cfg.add_options()
-    ("host", bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)")
-    ("port", bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
-    ("skip-to", bpo::value<uint32_t>()->default_value(0), "Skip blocks before [arg]")
-    ("receiver-state-db-size", bpo::value<uint32_t>()->default_value(1024), "database size in MB")
+    (RCV_HOST_OPT, bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)")
+    (RCV_PORT_OPT, bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
+    (RCV_SKIP_OPT, bpo::value<uint32_t>()->default_value(0), "Skip blocks before [arg]")
+    (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(1024), "database size in MB")
     ;
 }
 
@@ -833,7 +839,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->db = std::make_shared<chainbase::database>
       (app().data_dir().native() + "/receiver-state",
        chainbase::database::read_write,
-       options.at("receiver-state-db-size").as<uint32_t>() * 1024*1024);
+       options.at(RCV_DBSIZE_OPT).as<uint32_t>() * 1024*1024);
     my->db->add_index<chronicle::state_index>();
     my->db->add_index<chronicle::received_block_index>();
     my->db->add_index<chronicle::contract_abi_index>();
@@ -844,9 +850,9 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->stream->binary(true);
     my->stream->read_message_max(1024 * 1024 * 1024);
     
-    my->host = options.at("host").as<string>();
-    my->port = options.at("port").as<string>();
-    my->skip_to = options.at("skip-to").as<uint32_t>();
+    my->host = options.at(RCV_HOST_OPT).as<string>();
+    my->port = options.at(RCV_PORT_OPT).as<string>();
+    my->skip_to = options.at(RCV_SKIP_OPT).as<uint32_t>();
 
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
