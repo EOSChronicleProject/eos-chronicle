@@ -127,6 +127,7 @@ public:
   
   
   void close_ws(boost::beast::websocket::close_reason reason) {
+    ws.next_layer().cancel();
     if( ws.is_open() ) {
       ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
       if( async_mode ) {
