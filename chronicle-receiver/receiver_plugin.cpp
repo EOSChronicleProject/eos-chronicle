@@ -63,6 +63,7 @@ namespace {
   const char* RCV_PORT_OPT = "port";
   const char* RCV_SKIP_OPT = "skip-to";
   const char* RCV_DBSIZE_OPT = "receiver-state-db-size";
+  const char* RCV_EVERY_OPT = "report-every";
 }
 
 
@@ -179,6 +180,7 @@ public:
   string                                host;
   string                                port;
   uint32_t                              skip_to = 0;
+  uint32_t                              report_every = 0;
   bool                                  aborting = false;
   
   uint32_t                              head            = 0;
@@ -517,7 +519,7 @@ public:
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
       
-    if (head % 10000 == 0) {
+    if (report_every > 0 && head % report_every == 0) {
          uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
          uint64_t size = db->get_segment_manager()->get_size();
          ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
@@ -826,6 +828,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_PORT_OPT, bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
     (RCV_SKIP_OPT, bpo::value<uint32_t>()->default_value(0), "Skip blocks before [arg]")
     (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(1024), "database size in MB")
+    (RCV_EVERY_OPT, bpo::value<uint32_t>()->default_value(10000), "Report current state every N blocks")
     ;
 }
 
@@ -853,6 +856,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();
     my->skip_to = options.at(RCV_SKIP_OPT).as<uint32_t>();
+    my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
 
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
