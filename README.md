@@ -121,12 +121,26 @@ message.
 
 # Compiling
 
-TODO: full installation procedure on bare Ubuntu
+Minimum requirements: Ubuntu 18.10, 3GB RAM
 
+
+```
+sudo apt update && \
+sudo apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test-dev \
+ libboost-filesystem-dev libboost-date-time-dev libboost-system-dev libboost-iostreams-dev \
+ libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev pkg-config libzmq5-dev
+
+mkdir build
+cd build
+git clone https://github.com/EOSChronicleProject/eos-chronicle.git
+cd eos-chronicle
+git submodule update --init --recursive
+mkdir build
 cd build
 cmake ..
+# use "make -j N" for N CPU cores for faster compiling (may require more RAM)
 make
-
+```
 
 `examples/exp-dummy-plugin` explains how to add and compile your own plugin to `chronicle-receiver`.
 
