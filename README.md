@@ -146,9 +146,55 @@ make
 
 
 
+# Configuring and running
+
+Similarly to `nodeos`, `chronicle-receiver` needs a configuratuion
+directory with `config.ini` in it, and a data directory where it stores
+its internal state.
+
+Further on, we use Linux user `eosio` for running the receiver, and
+`/home/eosio/chronicle-config` as configuration directory, although you
+may choose other names.
+
+Here's a minimal configuration for the receiver using Websocket
+exporter. It connects to `nodeos` process runnig `state_history_plugin`
+at `localhost:8080` and exports the data to a websocket server at
+`localhost:8800`. In a production environment, hosts may be different
+machines in the network. The example is using bidirectional mode and
+default queue sizes.
+
+```
+mkdir /home/eosio/chronicle-config
+cat >/home/eosio/chronicle-config/config.ini <<'EOT'
+# connection to nodeos state_history_plugin
+host = 127.0.0.1
+port = 8080
+# Websocket exporter in bidirectional mode
+plugin = exp_ws_plugin
+exp-ws-host = 127.0.0.1
+exp-ws-port = 8800
+exp-ws-ack  = true
+EOT
+
+# Start the receiver to check that everything is working as
+# expected. Use Ctrl-C to stop it.
+/home/eosio/build/eos-chronicle/build/chronicle-receiver \
+  --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
+
+# Prepare for long-term run inside a systemd unit
+
+(TODO)
+
+
+```
+
+
+
+
+
 ## Souce code, license and copyright
 
-Source code repository: https://github.com/cc32d9/dappscatalog
+Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
 Copyright 2018 cc32d9@gmail.com
 
