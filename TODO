@@ -1,8 +1,23 @@
-websocket export in pure JSON format
+For future releases:
 
-full installation documentation
+* Enable bidirectional mode for ZMQ plugin.
 
-sometimes JSON is invalid, needs debugging
+* Head mode: jump to blockchain head and download ABI on the fly from a
+  nodeos URL.
 
-Procedure for adding new plugins
+* Random access mode: start processing from an arbitrary block and
+  download versions of ABI relevant to those blocks from an external
+  server.
+
+* irreversible-only mode
+
+* stop-block option (stop processing at a given block)
+
+* consider adding multiple threads in conveyor fashion: history receiver
+  and decompression in one thread, JSON encoding in another, and
+  exporter in a third thread.
+
+
+
+
 
