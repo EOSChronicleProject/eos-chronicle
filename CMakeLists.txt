@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.11)
 project(eos-chronicle VERSION 0.1 LANGUAGES CXX)
 
 set(default_build_type "Release")
@@ -15,7 +15,7 @@ endif()
 include(GNUInstallDirs)
 
 SET(Boost_USE_STATIC_LIBS ON CACHE STRING "ON or OFF")
-FIND_PACKAGE(Boost 1.65 REQUIRED COMPONENTS
+FIND_PACKAGE(Boost 1.67 REQUIRED COMPONENTS
 thread unit_test_framework filesystem date_time system iostreams program_options)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/fc/CMakeModules")
