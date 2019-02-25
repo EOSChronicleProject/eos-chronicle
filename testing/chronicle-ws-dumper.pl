@@ -9,7 +9,12 @@ use strict;
 use warnings;
 use JSON;
 use Getopt::Long;
+use Time::HiRes qw(time);
+
 use Net::WebSocket::Server;
+use Protocol::WebSocket::Frame;
+
+$Protocol::WebSocket::Frame::MAX_PAYLOAD_SIZE = 100*1024*1024;
 
 $| = 1;
 
@@ -18,7 +23,7 @@ my $ack;
 
 my $ok = GetOptions
     ('port=i' => \$port,
-     'ack=i' => \$ack);
+     'ack=f' => \$ack);
 
 
 if( not $ok or scalar(@ARGV) > 0 )

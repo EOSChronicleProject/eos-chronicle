@@ -1,0 +1,34 @@
+{
+  "includes": [],
+  "appenders": [{
+      "name": "consoleout",
+      "type": "console",
+      "args": {
+        "stream": "std_out",
+        "level_colors": [{
+            "level": "debug",
+            "color": "green"
+          },{
+            "level": "warn",
+            "color": "brown"
+          },{
+            "level": "error",
+            "color": "red"
+          }
+        ]
+      },
+      "enabled": true
+    }
+  ],
+
+  "loggers": [{
+      "name": "default",
+      "level": "error",
+      "enabled": true,
+      "additivity": false,
+      "appenders": [
+        "consoleout"
+      ]
+    }
+  ]
+}

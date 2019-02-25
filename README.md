@@ -163,6 +163,15 @@ at `localhost:8080` and exports the data to a websocket server at
 machines in the network. The example is using bidirectional mode and
 default queue sizes.
 
+The receiver would stop immediately if the websocket server is not
+responding. For further tests, you need a consumer server ready.
+
+The Perl script `testing/chronicle-ws-dumper.pl` can be used as a
+websocket server that dumps the input to standard output, but there's an
+issue that is not merged into the CPAN module yet:
+https://github.com/vti/protocol-websocket/issues/59
+
+
 ```
 mkdir /home/eosio/chronicle-config
 cat >/home/eosio/chronicle-config/config.ini <<'EOT'
@@ -183,13 +192,110 @@ EOT
 
 # Prepare for long-term run inside a systemd unit
 
-(TODO)
+cat >chronicle-config/chronicle-receiver.service <<'EOT'
+[Unit]
+Description=EOS Chronicle receiver
+[Service]
+Type=simple
+ExecStart=/home/eosio/build/eos-chronicle/build/chronicle-receiver --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
+TimeoutStopSec=300s
+Restart=on-success
+RestartSec=10
+User=eosio
+Group=eosio
+KillMode=control-group
+[Install]
+WantedBy=multi-user.target
+EOT
 
-
+sudo cp chronicle-config/chronicle-receiver.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable chronicle-receiver
+sudo systemctl start chronicle-receiver
+# check the status
+sudo systemctl status chronicle-receiver
 ```
 
+Only one exporter plugin can be activated at a time.
+
+If you need to move or copy the state data, flush the system cache first:
+
+```
+sync; echo 3 > /proc/sys/vm/drop_caches
+```
+
+# Command-line and configuration options
+
+The following options are available from command-line only:
+
+* `--data-dir=DIR` (mandatory): Directory containing program runtime
+  data;
+
+* `--config-dir=DIR` Directory containing configuration files such as
+  config.ini. Defaults to `${HOME}/config-dir`;
+
+* `-h [ --help ]`: Print help message and exit;
+
+* `-v [ --version ]`:  Print version information;
+
+* `--print-default-config`: Print default configuration template. The
+  output will have empty `plugin` option, so you will need to add an
+  exporter plugin to it.
+
+* `--config=FILE` (=`config.ini`): Configuration file name relative to config-dir;
+
+* `--logconf=FILE` (=`logging.json`): Logging configuration file
+  name/path for library users. An example file that is only printing
+  error messages is located in `examples/` folder.
+
+The following opttions are available from command line and `config.ini`:
+
+* `host = HOST` (=`localhost`): Host to connect to (nodeos with
+  state_history_plugin);
+
+* `port = PORT` (=`8080`): Port to connect to (nodeos with state-history
+  plugin);
+
+* `skip-to = BLOCK` (=`0`): At the start, jump to the block number after
+  the specified one. This will likely lead to inconsistent ABI
+  information;
+
+* `receiver-state-db-size = N` (=`1024`): State database size in MB;
+
+* `--report-every = N` (=`10000`) Print informational messages every so
+  many blocks;
 
 
+Options for `exp_ws_plugin`:
+
+* `exp-ws-host = HOST` (mandatory): Websocket server host to connect to;
+
+* `exp-ws-port = PORT` (mandatory): Websocket server port to connect to;
+
+* `exp-ws-ack = true|false` (=`false`) Enable bidirectional mode
+  (websocket server is expected to send acknowledgeements for processed
+  blocks);
+
+* `exp-ws-max-unack = N` (=1000): Receiver will pause at so many unacknowledged blocks;
+
+* `exp-ws-max-queue = N` (=10000): Receiver will pause if outbound queue exceeds this limit.
+
+
+Options for `exp_zmq_plugin`:
+
+* `exp-zmq-bind = ENDPOINT` (=tcp://127.0.0.1:5557): ZMQ PUSH socket binding.
+
+
+
+
+
+# Sample output
+
+At
+https://cloudflare-ipfs.com/ipfs/QmZeR8hq9Vxh3VBy6YDYMJBzGSRR7kRReTiXRAgWRzdgRW
+you can download about 76MB of gzipped JSON output. The raw output of
+`exp_ws_plugin` is prettyfied and separated by double newline
+characters.
 
 
 ## Souce code, license and copyright
