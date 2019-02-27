@@ -64,18 +64,6 @@ namespace json_encoder {
     state.writer.String(str.data(), str.length());
   }
   
-  // These two functions are stolen from native_to_bin branch in abieos and should go away as
-  // soon as it merges
-  template <class C, typename M>
-  const C* class_from_void(M C::*, const void* v) {
-    return reinterpret_cast<const C*>(v);
-  }
-  
-  template <auto P>
-  auto& member_from_void(const member_ptr<P>&, const void* p) {
-    return class_from_void(P, p)->*P;
-  }
-  
   template <typename T>
   void native_to_json(const std::vector<T>& obj, native_to_json_state& state) {
     state.writer.StartArray();
@@ -137,11 +125,11 @@ namespace json_encoder {
               const char* datajs = abieos_bin_to_json(ctxt, obj.account.value, action_type,
                                                       obj.data.data.data(), obj.data.data.size());
               if( datajs == nullptr )
-                throw error("abieos_bin_to_json returned null");
+                throw runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(datajs, strlen(datajs), rapidjson::kObjectType);
             }
             catch (...) {
-              throw error(abieos_get_error(ctxt));
+              throw runtime_error(abieos_get_error(ctxt));
             }
           }
           catch ( const std::exception& e  ) {
@@ -213,11 +201,11 @@ namespace json_encoder {
               const char* valjs = abieos_bin_to_json(ctxt, obj.code.value, table_type,
                                                      obj.value.data.data(), obj.value.data.size());
               if( valjs == nullptr )
-                throw error("abieos_bin_to_json returned null");
+                throw runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(valjs, strlen(valjs), rapidjson::kObjectType);
             }
             catch (...) {
-              throw error(abieos_get_error(ctxt));
+              throw runtime_error(abieos_get_error(ctxt));
             }
           }
           catch ( const std::exception& e ) {
@@ -268,12 +256,18 @@ namespace json_encoder {
   }
 
   inline void native_to_json(const abieos::public_key& obj, native_to_json_state& state) {
-    string str = public_key_to_string(obj);
+    string str;
+    string error;
+    if (!public_key_to_string(str, error, obj))
+      throw runtime_error(error);
     state.writer.String(str.data(), str.length());
   }
 
   inline void native_to_json(const abieos::signature& obj, native_to_json_state& state) {
-    string str = signature_to_string(obj);
+    string str;
+    string error;
+    if (!signature_to_string(str, error, obj))
+      throw runtime_error(error);
     state.writer.String(str.data(), str.length());
   }
 
@@ -360,6 +354,8 @@ public:
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
   chronicle::channels::receiver_pauses::channel_type::handle     _receiver_pauses_subscription;
 
+  const int channel_priority = 50;
+  
   // A static copy of JSON writer buffer in order to avoid reallocation
   rapidjson::StringBuffer impl_buffer;
   rapidjson::Writer<rapidjson::StringBuffer> impl_writer;
@@ -437,20 +433,20 @@ public:
   void on_fork(std::shared_ptr<chronicle::channels::fork_event> fe) {
     auto output = make_shared<string>();
     impl_native_to_json(*fe, *output);
-    _js_forks_chan.publish(output);
+    _js_forks_chan.publish(channel_priority, output);
   }
 
   void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {
     auto output = make_shared<string>();
     impl_native_to_json(*block_ptr, *output);
-    _js_blocks_chan.publish(output);
+    _js_blocks_chan.publish(channel_priority, output);
   }
 
   void on_transaction_trace(std::shared_ptr<chronicle::channels::transaction_trace> ccttr) {
     vector<string> encoder_errors;
     auto output = make_shared<string>();
     impl_native_to_json(*ccttr, *output, &encoder_errors);
-    _js_transaction_traces_chan.publish(output);
+    _js_transaction_traces_chan.publish(channel_priority, output);
     if( encoder_errors.size() > 0 ) {
       map<string, string> attrs;
       attrs["where"] = "transaction_trace";
@@ -464,26 +460,26 @@ public:
   void on_abi_update(std::shared_ptr<chronicle::channels::abi_update> abiupd) {
     auto output = make_shared<string>();
     impl_native_to_json(*abiupd, *output);
-    _js_abi_updates_chan.publish(output);
+    _js_abi_updates_chan.publish(channel_priority, output);
   }
 
   void on_abi_removal(std::shared_ptr<chronicle::channels::abi_removal> ar) {
     auto output = make_shared<string>();
     impl_native_to_json(*ar, *output);
-    _js_abi_removals_chan.publish(output);
+    _js_abi_removals_chan.publish(channel_priority, output);
   }
 
   void on_abi_error(std::shared_ptr<chronicle::channels::abi_error> abierr) {
     auto output = make_shared<string>();
     impl_native_to_json(*abierr, *output);
-    _js_abi_errors_chan.publish(output);
+    _js_abi_errors_chan.publish(channel_priority, output);
   }
   
   void on_table_row_update(std::shared_ptr<chronicle::channels::table_row_update> trupd) {
     vector<string> encoder_errors;
     auto output = make_shared<string>();
     impl_native_to_json(*trupd, *output, &encoder_errors);
-    _js_table_row_updates_chan.publish(output);
+    _js_table_row_updates_chan.publish(channel_priority, output);
     if( encoder_errors.size() > 0 ) {
       map<string, string> attrs;
       attrs["where"] = "table_row_update";
@@ -502,7 +498,7 @@ public:
   void on_receiver_pause(std::shared_ptr<chronicle::channels::receiver_pause> rp) {
     auto output = make_shared<string>();
     impl_native_to_json(*rp, *output);
-    _js_receiver_pauses_chan.publish(output);
+    _js_receiver_pauses_chan.publish(channel_priority, output);
   }
     
   
@@ -521,7 +517,7 @@ public:
     writer.EndArray();
     writer.EndObject();
     auto output = make_shared<string>(buffer.GetString());
-    _js_abi_decoder_errors_chan.publish(output);
+    _js_abi_decoder_errors_chan.publish(channel_priority, output);
   }
       
 };

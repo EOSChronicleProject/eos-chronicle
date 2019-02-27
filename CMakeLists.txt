@@ -62,7 +62,8 @@ include_directories(
   chronicle-receiver
   external/appbase/include
   external/abieos/src
-  external/abieos/external/rapidjson/include 
+  external/abieos/external/rapidjson/include
+  external/abieos/external/date/include
   external/chainbase/include
   external/fc/include
   ${Boost_INCLUDE_DIR})

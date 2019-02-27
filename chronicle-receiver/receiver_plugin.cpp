@@ -210,6 +210,8 @@ public:
   chronicle::channels::table_row_updates::channel_type&   _table_row_updates_chan;
   chronicle::channels::receiver_pauses::channel_type&     _receiver_pauses_chan;
 
+  const int channel_priority = 50;
+
   bool                                  exporter_will_ack = false;
   uint32_t                              exporter_acked_block = 0;
   uint32_t                              exporter_max_unconfirmed;
@@ -275,7 +277,7 @@ public:
       fe->fork_block_num = head;
       fe->depth = depth;
       fe->fork_reason = chronicle::channels::fork_reason_val::restart;
-      _forks_chan.publish(fe);
+      _forks_chan.publish(channel_priority, fe);
     }
     
     if( skip_to > 0 ) {
@@ -359,7 +361,7 @@ public:
         auto rp = std::make_shared<chronicle::channels::receiver_pause>();
         rp->head = head;
         rp->acknowledged = exporter_acked_block;
-        _receiver_pauses_chan.publish(rp);
+        _receiver_pauses_chan.publish(channel_priority, rp);
         ilog("Pausing the reader");
       }
       
@@ -377,10 +379,15 @@ public:
   
   void receive_abi(const shared_ptr<flat_buffer>& p) {
     auto data = p->data();
-    if (!json_to_native(abi, string_view{(const char*)data.data(), data.size()}))
-      throw runtime_error("abi parse error");
-    check_abi_version(abi.version);
-    abi_types    = create_contract(abi).abi_types;
+    std::string error;
+    if (!json_to_native(abi, error, string_view{(const char*)data.data(), data.size()}))
+      throw runtime_error("abi parse error: " + error);
+    if( !check_abi_version(abi.version, error) )
+      throw runtime_error("abi version error: " + error);
+    abieos::contract c;
+    if( !fill_contract(c, error, abi) )
+      throw runtime_error(error);
+    abi_types    = c.abi_types;
   }
 
   
@@ -419,9 +426,10 @@ public:
     input_buffer bin{(const char*)data.data(), (const char*)data.data() + data.size()};
     check_variant(bin, get_type("result"), "get_blocks_result_v0");
 
+    string error;
     get_blocks_result_v0 result;
-    if (!bin_to_native(result, bin))
-      throw runtime_error("result conversion error");
+    if (!bin_to_native(result, error, bin))
+      throw runtime_error("result conversion error: " + error);
 
     if (!result.this_block)
       return true;
@@ -458,7 +466,7 @@ public:
         fe->fork_block_num = block_num;
         fe->depth = depth;
         fe->fork_reason = chronicle::channels::fork_reason_val::network;
-        _forks_chan.publish(fe);
+        _forks_chan.publish(channel_priority, fe);
       }
       else
         if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
@@ -531,11 +539,12 @@ public:
     auto block_ptr = std::make_shared<chronicle::channels::block>();
     block_ptr->block_num = head;
     block_ptr->last_irreversible = irreversible;
-    
-    if (!bin_to_native(block_ptr->block, bin))
-      throw runtime_error("block conversion error");
+
+    string error;
+    if (!bin_to_native(block_ptr->block, error, bin))
+      throw runtime_error("block conversion error: " + error);
     block_timestamp = block_ptr->block.timestamp;
-    _blocks_chan.publish(block_ptr);
+    _blocks_chan.publish(channel_priority, block_ptr);
   }
 
 
@@ -544,15 +553,19 @@ public:
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
     
-    auto     num     = read_varuint32(bin);
+    uint32_t num;
+    string error;
+    if( !read_varuint32(bin, error, num) )
+      throw runtime_error(error);
     for (uint32_t i = 0; i < num; ++i) {
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
       
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
       bltd->block_timestamp = block_timestamp;
-      
-      if (!bin_to_native(bltd->table_delta, bin))
-        throw runtime_error("table_delta conversion error (1)");
+
+      string error;
+      if (!bin_to_native(bltd->table_delta, error, bin))
+        throw runtime_error("table_delta conversion error: " + error);
       
       auto& variant_type = get_type(bltd->table_delta.name);
       if (!variant_type.filled_variant || variant_type.fields.size() != 1 || !variant_type.fields[0].type->filled_struct)
@@ -567,9 +580,10 @@ public:
       if (bltd->table_delta.name == "account") {  // memorize contract ABI
         for (auto& row : bltd->table_delta.rows) {
           if (row.present) {
+            string error;
             account_object acc;
-            if (!bin_to_native(acc, row.data))
-              throw runtime_error("account row conversion error");
+            if (!bin_to_native(acc, error, row.data))
+              throw runtime_error("account row conversion error: " + error);
             if( acc.abi.data.size() == 0 ) {
               clear_contract_abi(acc.name);
             }
@@ -586,11 +600,13 @@ public:
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             tru->block_num = head;
             tru->block_timestamp = block_timestamp;
-            if (!bin_to_native(tru->kvo, row.data))
-              throw runtime_error("cannot read table row object");
+
+            string error;
+            if (!bin_to_native(tru->kvo, error, row.data))
+              throw runtime_error("cannot read table row object" + error);
             if( get_contract_abi_ready(tru->kvo.code) ) {
               tru->added = row.present;
-              _table_row_updates_chan.publish(tru);
+              _table_row_updates_chan.publish(channel_priority, tru);
             }
             else {
               auto ae =  std::make_shared<chronicle::channels::abi_error>();
@@ -598,12 +614,12 @@ public:
               ae->block_timestamp = block_timestamp;
               ae->account = tru->kvo.code;
               ae->error = "cannot decode table delta because of missing ABI";
-              _abi_errors_chan.publish(ae);
+              _abi_errors_chan.publish(channel_priority, ae);
             }
           }
         }
       }
-      _block_table_deltas_chan.publish(bltd);
+      _block_table_deltas_chan.publish(channel_priority, bltd);
     }
   } // receive_deltas
 
@@ -631,7 +647,7 @@ public:
       ar->block_num = head;
       ar->block_timestamp = block_timestamp;
       ar->account = account;
-      _abi_removals_chan.publish(ar);
+      _abi_removals_chan.publish(channel_priority, ar);
     }
   }
 
@@ -671,8 +687,10 @@ public:
         abiupd->account = account;
         abiupd->abi_bytes = bytes {data};
         input_buffer buf{data.data(), data.data() + data.size()};
-        bin_to_native(abiupd->abi, buf);
-        _abi_updates_chan.publish(abiupd);
+        string error;
+        if (!bin_to_native(abiupd->abi, error, buf))
+          throw runtime_error(error);
+        _abi_updates_chan.publish(channel_priority, abiupd);
       }
     }
     catch (const exception& e) {
@@ -682,7 +700,7 @@ public:
       ae->block_timestamp = block_timestamp;
       ae->account = account;
       ae->error = e.what();
-      _abi_errors_chan.publish(ae);
+      _abi_errors_chan.publish(channel_priority, ae);
     }
   }
 
@@ -706,11 +724,14 @@ public:
     if (_transaction_traces_chan.has_subscribers()) {
       auto         data = zlib_decompress(buf);
       input_buffer bin{data.data(), data.data() + data.size()};
-      auto         num = read_varuint32(bin);
-      for (uint32_t i = 0; i < num; ++i) {
+      uint32_t num;
+      string       error;
+      if( !read_varuint32(bin, error, num) )
+        throw runtime_error(error);
+      for (uint32_t i = 0; i < num; ++i) {        
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
-        if (!bin_to_native(tr->trace, bin))
-          throw runtime_error("transaction_trace conversion error (1)");
+        if (!bin_to_native(tr->trace, error, bin))
+          throw runtime_error("transaction_trace conversion error: " + error);
         // check blacklist
         bool blacklisted = false;
         if( tr->trace.traces.size() > 0 ) {
@@ -725,7 +746,7 @@ public:
         if( !blacklisted ) {
           tr->block_num = head;
           tr->block_timestamp = block_timestamp;
-          _transaction_traces_chan.publish(tr);
+          _transaction_traces_chan.publish(channel_priority, tr);
         }
       }
     }
@@ -741,9 +762,10 @@ public:
 
 
   void send(const jvalue& value) {
+    string error;
     auto bin = make_shared<vector<char>>();
-    if (!json_to_bin(*bin, &get_type("request"), value))
-      throw runtime_error("failed to convert during send");
+    if (!json_to_bin(*bin, error, &get_type("request"), value))
+      throw runtime_error("failed to convert during send: " + error);
 
     stream->async_write(asio::buffer(*bin),
                        [bin, this](const error_code ec, size_t) {
@@ -752,7 +774,10 @@ public:
 
   
   void check_variant(input_buffer& bin, const abi_type& type, uint32_t expected) {
-    auto index = read_varuint32(bin);
+    string error;
+    uint32_t index;
+    if( !read_varuint32(bin, error, index) )
+      throw runtime_error(error);
     if (!type.filled_variant)
       throw runtime_error(type.name + " is not a variant"s);
     if (index >= type.fields.size())
@@ -763,7 +788,10 @@ public:
 
   
   void check_variant(input_buffer& bin, const abi_type& type, const char* expected) {
-    auto index = read_varuint32(bin);
+    string error;
+    uint32_t index;
+    if( !read_varuint32(bin, error, index) )
+      throw runtime_error(error);
     if (!type.filled_variant)
       throw runtime_error(type.name + " is not a variant"s);
     if (index >= type.fields.size())

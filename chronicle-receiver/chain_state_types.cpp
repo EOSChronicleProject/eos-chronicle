@@ -14,23 +14,25 @@ namespace chain_state {
     throw runtime_error("unknown status: " + to_string((uint8_t)status));
   }
 
-  bool bin_to_native(transaction_status& status, bin_to_native_state& state, bool) {
-    status = transaction_status(read_bin<uint8_t>(state.bin));
+  bool bin_to_native(transaction_status& obj, bin_to_native_state& state, bool start) {
+    uint8_t& o = (uint8_t&) obj;
+    return bin_to_native(o, state, start);
+  }
+
+  bool json_to_native(transaction_status& obj, json_to_native_state& state, event_type event, bool start) {
+    uint8_t& o = (uint8_t&) obj;
+    return json_to_native(o, state, event, start);
+  }
+
+  bool bin_to_native(variant_header_zero& obj, bin_to_native_state& state, bool start) {
+    varuint32 o;
+    return bin_to_native(o, state, start);
     return true;
   }
 
-  bool json_to_native(transaction_status&, json_to_native_state&, event_type, bool) {
-    throw error("json_to_native: transaction_status unsupported");
-  }
-
-  bool bin_to_native(variant_header_zero&, bin_to_native_state& state, bool) {
-    if (read_varuint32(state.bin))
-      throw std::runtime_error("unexpected variant value");
-    return true;
-  }
-
-  bool json_to_native(variant_header_zero&, json_to_native_state&, event_type, bool) {
-    return true;
+  bool json_to_native(variant_header_zero& obj, json_to_native_state& state, event_type event, bool start) {
+    varuint32 o;
+    return json_to_native(o, state, event, start);
   }
 
   bool bin_to_native(recurse_action_trace& obj, bin_to_native_state& state, bool start) {
