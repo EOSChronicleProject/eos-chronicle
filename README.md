@@ -298,7 +298,24 @@ you can download about 76MB of gzipped JSON output. The raw output of
 characters.
 
 
-## Souce code, license and copyright
+# Release notes
+
+## Release 1.0
+
+Known caveat: you need a valid Github account which is associated with
+your SSH key in order to be able to init the submodules recursively:
+(https://github.com/EOSIO/abieos/issues/14).
+
+This release is based on Block.one libraries of particular older
+versions. It uses `abieos` library from Novemner 13th, with an
+additional patch. Newer versions of those libraries are introducing some
+incompatible changes, and the work is in progress to adapt Chronicle to
+those changes.
+
+
+
+
+# Souce code, license and copyright
 
 Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
