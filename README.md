@@ -302,10 +302,6 @@ characters.
 
 ## Release 1.0
 
-Known caveat: you need a valid Github account which is associated with
-your SSH key in order to be able to init the submodules recursively:
-(https://github.com/EOSIO/abieos/issues/14).
-
 This release is based on Block.one libraries of particular older
 versions. It uses `abieos` library from Novemner 13th, with an
 additional patch. Newer versions of those libraries are introducing some
