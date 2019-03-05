@@ -279,12 +279,17 @@ public:
     }
     
     if( skip_to > 0 ) {
-      if( skip_to <= head ) {
+      if( skip_to <= head )
         throw runtime_error("skip-to is behind the current head");
-      }
+      if( exporter_will_ack )
+        throw runtime_error("Cannot use skip-to and exporter acknowledgements at the same time");
+      
       head = 0;
       head_id = {};
     }
+
+    if( exporter_will_ack )
+      exporter_acked_block = head;
 
     init_contract_abi_ctxt();
   }
@@ -343,8 +348,7 @@ public:
   
   bool check_pause() {
     if( slowdown_requested || 
-        (exporter_will_ack && exporter_acked_block > 0 &&
-         head - exporter_acked_block >= exporter_max_unconfirmed) ) {
+        (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ) {
       
       slowdown_requested = false;
       
