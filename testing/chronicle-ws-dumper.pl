@@ -15,7 +15,8 @@ use Net::WebSocket::Server;
 use Protocol::WebSocket::Frame;
 
 $Protocol::WebSocket::Frame::MAX_PAYLOAD_SIZE = 100*1024*1024;
-
+$Protocol::WebSocket::Frame::MAX_FRAGMENTS_AMOUNT = 102400;
+    
 $| = 1;
 
 my $port = 8800;

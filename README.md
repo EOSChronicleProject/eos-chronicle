@@ -166,10 +166,8 @@ default queue sizes.
 The receiver would stop immediately if the websocket server is not
 responding. For further tests, you need a consumer server ready.
 
-The Perl script `testing/chronicle-ws-dumper.pl` can be used as a
-websocket server that dumps the input to standard output, but there's an
-issue that is not merged into the CPAN module yet:
-https://github.com/vti/protocol-websocket/issues/59
+The Perl script `testing/chronicle-ws-dumper.pl` can be used as a test
+websocket server that dumps the input to standard output.
 
 
 ```
@@ -298,7 +296,20 @@ you can download about 76MB of gzipped JSON output. The raw output of
 characters.
 
 
-## Souce code, license and copyright
+# Release notes
+
+## Release 1.0
+
+This release is based on Block.one libraries of particular older
+versions. It uses `abieos` library from Novemner 13th, with an
+additional patch. Newer versions of those libraries are introducing some
+incompatible changes, and the work is in progress to adapt Chronicle to
+those changes.
+
+
+
+
+# Souce code, license and copyright
 
 Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
