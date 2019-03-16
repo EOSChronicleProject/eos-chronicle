@@ -64,6 +64,7 @@ namespace {
   const char* RCV_SKIP_OPT = "skip-to";
   const char* RCV_DBSIZE_OPT = "receiver-state-db-size";
   const char* RCV_EVERY_OPT = "report-every";
+  const char* RCV_MAX_QUEUE_OPT = "max-queue-size";
 }
 
 
@@ -181,6 +182,7 @@ public:
   string                                port;
   uint32_t                              skip_to = 0;
   uint32_t                              report_every = 0;
+  uint32_t                              max_queue_size = 0;
   bool                                  aborting = false;
   
   uint32_t                              head            = 0;
@@ -331,7 +333,6 @@ public:
   }
 
   
-  // if consumer fails to acknowledge on time, we wait and increase the timer up to 32 seconds
   void continue_read() {
     if( check_pause() ) {
       pause_time_msec = 0;
@@ -347,16 +348,18 @@ public:
   }
 
   
+  // if consumer fails to acknowledge on time, or processing queues get too big, we pacify the receiver
   bool check_pause() {
     if( slowdown_requested || 
-        (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ) {
+        (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ||
+        app().get_priority_queue().size() > max_queue_size ) {
       
       slowdown_requested = false;
       
       if( pause_time_msec == 0 ) {
         pause_time_msec = 100;
       }
-      else if( pause_time_msec < 25600 ) {
+      else if( pause_time_msec < 8000 ) {
         pause_time_msec *= 2;
       }
 
@@ -538,6 +541,7 @@ public:
               ("h",head)("i",irreversible)("m", free_bytes*100/size));
          if( exporter_will_ack )
            ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
+         ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
     }
 
     auto block_ptr = std::make_shared<chronicle::channels::block>();
@@ -861,6 +865,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_SKIP_OPT, bpo::value<uint32_t>()->default_value(0), "Skip blocks before [arg]")
     (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(1024), "database size in MB")
     (RCV_EVERY_OPT, bpo::value<uint32_t>()->default_value(10000), "Report current state every N blocks")
+    (RCV_MAX_QUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Maximum size of appbase priority queue")
     ;
 }
 
@@ -889,7 +894,8 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->port = options.at(RCV_PORT_OPT).as<string>();
     my->skip_to = options.at(RCV_SKIP_OPT).as<uint32_t>();
     my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
-
+    my->max_queue_size = options.at(RCV_MAX_QUEUE_OPT).as<uint32_t>();
+    
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
                       std::set<abieos::name>{abieos::name("onblock")} ));
