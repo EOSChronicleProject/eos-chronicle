@@ -191,7 +191,6 @@ public:
   abieos::block_timestamp               block_timestamp;
   
   // needed for decoding state history input
-  abi_def                               abi{};    
   map<string, abi_type>                 abi_types;
 
   // The context keeps decoded versions of contract ABI
@@ -384,6 +383,7 @@ public:
   void receive_abi(const shared_ptr<flat_buffer>& p) {
     auto data = p->data();
     std::string error;
+    abi_def abi{};
     if (!json_to_native(abi, error, string_view{(const char*)data.data(), data.size()}))
       throw runtime_error("abi parse error: " + error);
     if( !check_abi_version(abi.version, error) )
@@ -391,7 +391,7 @@ public:
     abieos::contract c;
     if( !fill_contract(c, error, abi) )
       throw runtime_error(error);
-    abi_types    = c.abi_types;
+    abi_types = std::move(c.abi_types);
   }
 
   
