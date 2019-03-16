@@ -166,10 +166,8 @@ default queue sizes.
 The receiver would stop immediately if the websocket server is not
 responding. For further tests, you need a consumer server ready.
 
-The Perl script `testing/chronicle-ws-dumper.pl` can be used as a
-websocket server that dumps the input to standard output, but there's an
-issue that is not merged into the CPAN module yet:
-https://github.com/vti/protocol-websocket/issues/59
+The Perl script `testing/chronicle-ws-dumper.pl` can be used as a test
+websocket server that dumps the input to standard output.
 
 
 ```
