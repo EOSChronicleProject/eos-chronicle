@@ -28,7 +28,6 @@ static appbase::abstract_plugin& _exp_ws_plugin = app().register_plugin<exp_ws_p
 namespace {
   const char* WS_HOST_OPT = "exp-ws-host";
   const char* WS_PORT_OPT = "exp-ws-port";
-  const char* WS_ACK_OPT = "exp-ws-ack";
   const char* WS_MAXUNACK_OPT = "exp-ws-max-unack";
   const char* WS_MAXQUEUE_OPT = "exp-ws-max-queue";
 }
@@ -47,7 +46,6 @@ public:
 
   string ws_host;
   string ws_port;
-  bool async_mode = false;
   boost::beast::websocket::stream<boost::asio::ip::tcp::socket> ws;
 
   rapidjson::StringBuffer json_buffer;
@@ -116,10 +114,8 @@ public:
     boost::asio::connect(ws.next_layer(), results.begin(), results.end());
     ws.handshake(ws_host, "/");
     ilog("Connected");
-    if( async_mode ) {
-      async_read_acks();
-      async_send_events();
-    }
+    async_read_acks();
+    async_send_events();
   }
 
 
@@ -132,16 +128,10 @@ public:
     ws.next_layer().cancel();
     if( ws.is_open() ) {
       ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
-      if( async_mode ) {
-        ws.async_close(reason, [&](error_code ec) {
-            if (ec) elog(ec.message());
-            abort_receiver();
-          });
-      }
-      else {
-        ws.close(reason);
-        abort_receiver();
-      }
+      ws.async_close(reason, [&](error_code ec) {
+          if (ec) elog(ec.message());
+          abort_receiver();
+        });
     }
     else {
       abort_receiver();
@@ -220,19 +210,8 @@ public:
         json_writer.RawValue(event->data(), event->length(), rapidjson::kObjectType);
         json_writer.EndObject();
 
-        if( async_mode ) {
-          string msg(json_buffer.GetString());
-          async_queue.push(msg);
-        }
-        else {
-          boost::asio::const_buffer buf(json_buffer.GetString(), json_buffer.GetLength());
-          boost::beast::error_code ec;
-          ws.write(buf, ec);
-          if( ec ) {
-            elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
-            throw std::runtime_error(ec.message());
-          }
-        }
+        string msg(json_buffer.GetString());
+        async_queue.push(msg);
       }
       FC_LOG_AND_RETHROW();
     }
@@ -255,7 +234,6 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
   cfg.add_options()
     (WS_HOST_OPT, bpo::value<string>(), "Websocket server host to connect to")
     (WS_PORT_OPT, bpo::value<string>(), "Websocket server port to connect to")
-    (WS_ACK_OPT, bpo::value<bool>()->default_value(false), "Websocket consumer will acknowledge processed blocks")
     (WS_MAXUNACK_OPT, bpo::value<uint32_t>()->default_value(1000), "Receiver will pause at so many unacknowledged blocks")
     (WS_MAXQUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Receiver will pause if outbound queue exceeds this limit")
     ;
@@ -282,21 +260,13 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     my->ws_host = options.at(WS_HOST_OPT).as<string>();
     my->ws_port = options.at(WS_PORT_OPT).as<string>();
 
-    if( options.count(WS_ACK_OPT) > 0 ) {
-      if( options.at(WS_ACK_OPT).as<bool>() ) {
-        my->async_mode = true;
-        uint32_t maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
-        if( maxunack == 0 )
-          throw std::runtime_error("Maximum unacked blocks must be a positive integer");
-        exporter_will_ack_blocks(maxunack);
-        my->queue_maxsize = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
-        if( my->queue_maxsize == 0 )
-          throw std::runtime_error("Maximum queue size must be a positive integer");
-      }
-    }
-
-    ilog("exp_ws_plugin is configured ${c} send acks to the receiver",
-         ("c", my->async_mode?"to":"not to"));
+    uint32_t maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
+    if( maxunack == 0 )
+      throw std::runtime_error("Maximum unacked blocks must be a positive integer");
+    exporter_will_ack_blocks(maxunack);
+    my->queue_maxsize = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
+    if( my->queue_maxsize == 0 )
+      throw std::runtime_error("Maximum queue size must be a positive integer");
     
     my->init();    
     ilog("Initialized exp_ws_plugin");
