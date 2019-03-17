@@ -20,11 +20,11 @@ $Protocol::WebSocket::Frame::MAX_FRAGMENTS_AMOUNT = 102400;
 $| = 1;
 
 my $port = 8800;
-my $ack;
+my $ack = 100;
 
 my $ok = GetOptions
     ('port=i' => \$port,
-     'ack=f' => \$ack);
+     'ack=i' => \$ack);
 
 
 if( not $ok or scalar(@ARGV) > 0 )
@@ -32,13 +32,13 @@ if( not $ok or scalar(@ARGV) > 0 )
     print STDERR "Usage: $0 [options...]\n",
     "Options:\n",
     "  --port=N        \[$port\] TCP port to listen to websocket connection\n",
-    "  --ack=N         Send acknowledgements every N seconds\n";
+    "  --ack=N         Send acknowledgements every N blocks\n";
     exit 1;
 }
 
 
 my $json = JSON->new->pretty->canonical;
-my $last_ack = time();
+my $last_ack = 0;
 my $last_block = 0;
 
 Net::WebSocket::Server->new(
@@ -65,13 +65,12 @@ Net::WebSocket::Server->new(
                         $last_block = $data->{'data'}{'block_num'};
                     }
                     
-                    if( $type eq 'BLOCK'  or $type eq 'RCVR_PAUSE' )
+                    if( ($type eq 'BLOCK' and $last_block - $last_ack >= $ack) or
+                        $type eq 'RCVR_PAUSE' )
                     {
-                        if( time() - $last_ack >= $ack )
-                        {
-                            $last_ack = time();
-                            $conn->send_binary(sprintf("%d", $last_block));
-                        }
+                        $last_ack = $last_block - 1;
+                        $conn->send_binary(sprintf("%d", $last_ack));
+                        print STDERR "ack $last_ack\n";
                     }
                 }
             },
