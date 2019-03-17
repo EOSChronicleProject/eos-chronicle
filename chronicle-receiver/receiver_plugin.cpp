@@ -61,7 +61,6 @@ using boost::system::error_code;
 namespace {
   const char* RCV_HOST_OPT = "host";
   const char* RCV_PORT_OPT = "port";
-  const char* RCV_SKIP_OPT = "skip-to";
   const char* RCV_DBSIZE_OPT = "receiver-state-db-size";
   const char* RCV_EVERY_OPT = "report-every";
   const char* RCV_MAX_QUEUE_OPT = "max-queue-size";
@@ -180,7 +179,6 @@ public:
   shared_ptr<websocket::stream<tcp::socket>> stream;
   string                                host;
   string                                port;
-  uint32_t                              skip_to = 0;
   uint32_t                              report_every = 0;
   uint32_t                              max_queue_size = 0;
   bool                                  aborting = false;
@@ -281,16 +279,6 @@ public:
       _forks_chan.publish(channel_priority, fe);
     }
     
-    if( skip_to > 0 ) {
-      if( skip_to <= head )
-        throw runtime_error("skip-to is behind the current head");
-      if( exporter_will_ack )
-        throw runtime_error("Cannot use skip-to and exporter acknowledgements at the same time");
-      
-      head = 0;
-      head_id = {};
-    }
-
     if( exporter_will_ack )
       exporter_acked_block = head;
 
@@ -411,7 +399,7 @@ public:
       itr++;
     }
 
-    uint32_t start_block = max(skip_to, head + 1);
+    uint32_t start_block = head + 1;
     ilog("Start block: ${b}", ("b",start_block));
     
     send(jvalue{jarray{{"get_blocks_request_v0"s},
@@ -442,9 +430,6 @@ public:
       return true;
       
     uint32_t    last_irreversoble_num = result.last_irreversible.block_num;
-    if( skip_to > last_irreversoble_num ) {
-      throw runtime_error("skip-to cannot be past irreversible block");
-    }
 
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
@@ -862,7 +847,6 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
   cfg.add_options()
     (RCV_HOST_OPT, bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)")
     (RCV_PORT_OPT, bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
-    (RCV_SKIP_OPT, bpo::value<uint32_t>()->default_value(0), "Skip blocks before [arg]")
     (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(1024), "database size in MB")
     (RCV_EVERY_OPT, bpo::value<uint32_t>()->default_value(10000), "Report current state every N blocks")
     (RCV_MAX_QUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Maximum size of appbase priority queue")
@@ -892,7 +876,6 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();
-    my->skip_to = options.at(RCV_SKIP_OPT).as<uint32_t>();
     my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
     my->max_queue_size = options.at(RCV_MAX_QUEUE_OPT).as<uint32_t>();
     
