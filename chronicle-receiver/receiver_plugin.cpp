@@ -1008,7 +1008,7 @@ void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname
   
 void abort_receiver() {
   receiver_plug->abort_receiver();
-  app().shutdown();
+  app().quit();
 }
 
 
