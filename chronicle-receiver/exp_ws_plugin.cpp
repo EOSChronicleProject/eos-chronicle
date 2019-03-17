@@ -47,6 +47,7 @@ public:
   string ws_host;
   string ws_port;
   boost::beast::websocket::stream<boost::asio::ip::tcp::socket> ws;
+  const int ws_priority = 60;
 
   rapidjson::StringBuffer json_buffer;
   rapidjson::Writer<rapidjson::StringBuffer> json_writer;
@@ -128,10 +129,10 @@ public:
     ws.next_layer().cancel();
     if( ws.is_open() ) {
       ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
-      ws.async_close(reason, [&](error_code ec) {
-          if (ec) elog(ec.message());
-          abort_receiver();
-        });
+      ws.async_close(reason, app().get_priority_queue().wrap(ws_priority, [&](error_code ec) {
+            if (ec) elog(ec.message());
+            abort_receiver();
+          }));
     }
     else {
       abort_receiver();
@@ -142,23 +143,25 @@ public:
   
   void async_read_acks() {
     auto in_buffer = std::make_shared<flat_buffer>();
-    ws.async_read(*in_buffer, [this, in_buffer](error_code ec, size_t) {
-        if (ec) {
-          close_ws(boost::beast::websocket::close_code::unknown_data);
-        }
-        else {
-          const auto in_data = in_buffer->data();
-          uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
-          if( ack > UINT32_MAX )
-            throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
-          ack_block(ack);
-          if( ack - prev_ack_reported > 10000 ) {
-            ilog("exp_ws_plugin queue_size=${q}", ("q",async_queue.size()));
-            prev_ack_reported = ack;
-          }
-          async_read_acks();
-        }
-      });
+    ws.async_read
+      (*in_buffer,
+       app().get_priority_queue().wrap(ws_priority, [this, in_buffer](error_code ec, size_t) {
+           if (ec) {
+             close_ws(boost::beast::websocket::close_code::unknown_data);
+           }
+           else {
+             const auto in_data = in_buffer->data();
+             uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
+             if( ack > UINT32_MAX )
+               throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
+             ack_block(ack);
+             if( ack - prev_ack_reported > 10000 ) {
+               ilog("exp_ws_plugin queue_size=${q}", ("q",async_queue.size()));
+               prev_ack_reported = ack;
+             }
+             async_read_acks();
+           }
+         }));
   }
 
 
@@ -172,9 +175,9 @@ public:
       }
 
       mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
-      mytimer.async_wait([this](const error_code ec) {
-          async_send_events();
-        });
+      mytimer.async_wait(app().get_priority_queue().wrap(ws_priority, [this](const error_code ec) {
+            async_send_events();
+          }));
     }
     else {
       pause_time_msec = 0;
@@ -183,15 +186,17 @@ public:
       async_msg = async_queue.front();
       async_queue.pop();
       async_out_buffer = boost::asio::const_buffer(async_msg.data(), async_msg.size());
-      ws.async_write(async_out_buffer, [this](error_code ec, size_t) {
-          if (ec) {
-            elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
-            close_ws(boost::beast::websocket::close_code::unknown_data);
-          }
-          else {
-            async_send_events();
-          }
-        });
+      ws.async_write
+        (async_out_buffer,
+         app().get_priority_queue().wrap(ws_priority, [this](error_code ec, size_t) {
+             if (ec) {
+               elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
+               close_ws(boost::beast::websocket::close_code::unknown_data);
+             }
+             else {
+               async_send_events();
+             }
+           }));
     }
   }
             

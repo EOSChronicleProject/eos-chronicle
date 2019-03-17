@@ -177,6 +177,8 @@ public:
   shared_ptr<chainbase::database>       db;
   shared_ptr<tcp::resolver>             resolver;
   shared_ptr<websocket::stream<tcp::socket>> stream;
+  const int                             stream_priority = 40;
+
   string                                host;
   string                                port;
   uint32_t                              report_every = 0;
@@ -311,13 +313,15 @@ public:
   
   void start_read() {
     auto in_buffer = make_shared<flat_buffer>();
-    stream->async_read(*in_buffer, [this, in_buffer](const error_code ec, size_t) {
-        callback(ec, "async_read", [&] {
-            receive_abi(in_buffer);
-            request_blocks();
-            continue_read();
-          });
-      });
+    stream->async_read
+      (*in_buffer,
+       app().get_priority_queue().wrap(stream_priority, [this, in_buffer](const error_code ec, size_t) {
+           callback(ec, "async_read", [&] {
+               receive_abi(in_buffer);
+               request_blocks();
+               continue_read();
+             });
+         }));
   }
 
   
@@ -325,13 +329,15 @@ public:
     if( check_pause() ) {
       pause_time_msec = 0;
       auto in_buffer = make_shared<flat_buffer>();
-      stream->async_read(*in_buffer, [this, in_buffer](const error_code ec, size_t) {
-          callback(ec, "async_read", [&] {
-              if (!receive_result(in_buffer))
-                return;
-              continue_read();
-            });
-        });
+      stream->async_read
+        (*in_buffer,
+         app().get_priority_queue().wrap(stream_priority, [this, in_buffer](const error_code ec, size_t) {
+             callback(ec, "async_read", [&] {
+                 if (!receive_result(in_buffer))
+                   return;
+                 continue_read();
+               });
+           }));
     }
   }
 
@@ -360,11 +366,12 @@ public:
       }
       
       mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
-      mytimer.async_wait([this](const error_code ec) {
-          callback(ec, "async_wait", [&] {
-              continue_read();
-            });
-        });
+      mytimer.async_wait
+        (app().get_priority_queue().wrap(stream_priority, [this](const error_code ec) {
+            callback(ec, "async_wait", [&] {
+                continue_read();
+              });
+          }));
       return false;
     }
     return true;
