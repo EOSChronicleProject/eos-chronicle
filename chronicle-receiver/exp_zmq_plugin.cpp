@@ -37,20 +37,19 @@ public:
   chronicle::channels::js_abi_errors::channel_type::handle          _js_abi_errors_subscription;
   chronicle::channels::js_table_row_updates::channel_type::handle   _js_table_row_updates_subscription;
   chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
+  chronicle::channels::js_receiver_pauses::channel_type::handle     _js_receiver_pauses_subscription;
 
 
   const int zmq_priority = 60;
   
-  azmq::push_socket sender_socket;
+  std::shared_ptr<azmq::push_socket> sender_socket;
   string sender_bind_str;
 
-  azmq::sub_socket receiver_socket;
+  std::shared_ptr<azmq::sub_socket> receiver_socket;
   string receiver_connect_str;
   std::array<char, 256> rcvbuf;
   
-  exp_zmq_plugin_impl():
-    sender_socket(std::ref(app().get_io_service())),
-    receiver_socket(std::ref(app().get_io_service()))
+  exp_zmq_plugin_impl()
   {}
 
   void init() {
@@ -85,13 +84,21 @@ public:
     _js_abi_decoder_errors_subscription =
       app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
       ([this](std::shared_ptr<string> event){ on_event(CHRONICLE_MSGTYPE_ENCODER_ERR, 0, event); });
+
+    _js_receiver_pauses_subscription =
+      app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
+      ([this](std::shared_ptr<string> event){ on_event(CHRONICLE_MSGTYPE_RCVR_PAUSE, 0, event); });
   }
 
   void start() {
+    sender_socket = std::make_shared<azmq::push_socket>(std::ref(app().get_io_service()));
+    receiver_socket = std::make_shared<azmq::sub_socket>(std::ref(app().get_io_service()));
+    
     ilog("Binding to ZMQ PUSH socket ${u}", ("u", sender_bind_str));
-    sender_socket.bind(sender_bind_str);
+    sender_socket->bind(sender_bind_str);
     ilog("Binding to ZMQ SUB socket ${u}", ("u", receiver_connect_str));
-    receiver_socket.connect(receiver_connect_str);
+    receiver_socket->connect(receiver_connect_str);
+    receiver_socket->set_option(azmq::socket::subscribe(""));
     async_read_acks();
   }
   
@@ -106,7 +113,7 @@ public:
         memcpy(ptr, &msgopts, sizeof(msgopts));
         ptr += sizeof(msgopts);
         memcpy(ptr, event->data(), event->length());
-        sender_socket.async_send
+        sender_socket->async_send
           (boost::asio::buffer(buf->data(), buf->size()),
            app().get_priority_queue().wrap(zmq_priority, [this](error_code ec, size_t) {
              if (ec) {
@@ -123,23 +130,29 @@ public:
 
 
   void async_read_acks() {
-    
-    receiver_socket.async_receive
-      (boost::asio::buffer(rcvbuf),
-       app().get_priority_queue().wrap(zmq_priority, [this](error_code ec, size_t bytes_transferred) {
-           if (ec) {
-             abort_receiver();
-           }
-           else {
-             uint64_t ack = std::stoul(string((const char*)rcvbuf.data(), bytes_transferred));
-             if( ack > UINT32_MAX )
-               throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
-             ack_block(ack);
-             async_read_acks();
-           }
-         }));
+    try {
+      try {
+        receiver_socket->async_receive
+          (boost::asio::buffer(rcvbuf),
+           app().get_priority_queue().wrap(zmq_priority, [this](error_code ec, size_t bytes_transferred) {
+               if (ec) {
+                 abort_receiver();
+               }
+               else {
+                 uint64_t ack = std::stoul(string((const char*)rcvbuf.data(), bytes_transferred));
+                 if( ack > UINT32_MAX )
+                   throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
+                 ack_block(ack);
+                 async_read_acks();
+               }
+             }));
+      }
+      FC_LOG_AND_RETHROW();
+    }
+    catch (...) {
+      abort_receiver();
+    }
   }
-  
 };
 
 
@@ -198,7 +211,10 @@ void exp_zmq_plugin::plugin_startup(){
 
 void exp_zmq_plugin::plugin_shutdown() {
   if( ! my->sender_bind_str.empty() ) {
-    my->sender_socket.disconnect(my->sender_bind_str);
+    my->sender_socket->disconnect(my->sender_bind_str);
+  }
+  if( ! my->receiver_connect_str.empty() ) {
+    my->receiver_socket->disconnect(my->receiver_connect_str);
   }
   ilog("exp_zmq_plugin stopped");
 }
