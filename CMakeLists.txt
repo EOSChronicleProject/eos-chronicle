@@ -66,6 +66,7 @@ include_directories(
   external/abieos/external/date/include
   external/chainbase/include
   external/fc/include
+  external/azmq
   ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver
