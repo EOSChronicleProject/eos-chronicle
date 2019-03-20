@@ -56,22 +56,19 @@ Net::WebSocket::Server->new(
                     exit;
                 } 
                 print $json->encode($data), "\n\n";
-                if( defined($ack) )
+                my $type = $data->{'msgtype'};
+                
+                if( $type eq 'BLOCK' )
                 {
-                    my $type = $data->{'msgtype'};
-                    
-                    if( $type eq 'BLOCK' )
-                    {
-                        $last_block = $data->{'data'}{'block_num'};
-                    }
-                    
-                    if( ($type eq 'BLOCK' and $last_block - $last_ack >= $ack) or
-                        $type eq 'RCVR_PAUSE' )
-                    {
-                        $last_ack = $last_block - 1;
-                        $conn->send_binary(sprintf("%d", $last_ack));
-                        print STDERR "ack $last_ack\n";
-                    }
+                    $last_block = $data->{'data'}{'block_num'};
+                }
+                
+                if( ($type eq 'BLOCK' and $last_block - $last_ack >= $ack) or
+                    $type eq 'RCVR_PAUSE' )
+                {
+                    $last_ack = $last_block - 1;
+                    $conn->send_binary(sprintf("%d", $last_ack));
+                    print STDERR "ack $last_ack\n";
                 }
             },
             'disconnect' => sub {
