@@ -19,35 +19,26 @@ The receiver is designed to work with `state_history_plugin` of
 the state history plugin and starts reading its data from a specific
 block number.
 
-The receiver is compiled with a number of exporter plugins, and only one
-exporter plugin can be enabled in its configuration. Exporter plugins
-organize the data export to their respective consumers.
+The receiver can be compiled with a number of exporter plugins, and only
+one exporter plugin can be enabled in its configuration. Exporter
+plugins organize the data export to their respective consumers.
 
-Exporters may work in one of two modes:
+Exporters must work in bidirectional mode: the exporter expects that the
+consumer acknowledges block numbers that it has processed and
+stored. Should `chronicle-receiver` stop, it will start from the block
+number next after acknowledged or last known irreversible, whichever is
+lower.
 
-* in unidirectional mode, the exporter pushes the data downstream as it
-  arrives from `nodeos`. Should `chronicle-receiver` stop, it will start
-  from the next block after last known irreversible one.
-
-* in bidirectional mode, the exporter expects that the consumer
-  acknowledges block numbers that it has processed and stored. Should
-  `chronicle-receiver` stop, it will start from the block number next
-  after acknowledged or last known irreversible, whichever is lower.
-
-
-Unidirectional mode is synchronous: it reads a new portion of data from
-`nodeos` as soon as current information is written in the outbound
-socket.
-
-Bidirectional mode benefits from asynchronous processing: the receiver
-starts with a parameter indicating the maximum number of unacknowledged
-blocks (1000 by default), and it continues retrieveing data from
-`nodeos` as long as the consumer confirms the blocks within this
-maximum. Received and decoded data is kept in a queue that is fed to the
-consumer, allowing it to process the data at its own pace. If the number
-of unacknowledged blocks reaches the maxumum, the reader pauses itself
-with an increasing timer, varying from 0.1 to 8 seconds. If the pause
-exceeds 2 seconds, an informational event is generated.
+The communication between exporter and consumer is performed
+asynchronously: the receiver starts with a parameter indicating the
+maximum number of unacknowledged blocks (1000 by default), and it
+continues retrieveing data from `nodeos` as long as the consumer
+confirms the blocks within this maximum. Received and decoded data is
+kept in a queue that is fed to the consumer, allowing it to process the
+data at its own pace. If the number of unacknowledged blocks reaches the
+maxumum, the reader pauses itself with an increasing timer, varying from
+0.1 to 8 seconds. If the pause exceeds 2 seconds, an informational event
+is generated.
 
 If `nodeos` stops or restarts, `chronicle-receiver` will automatically
 stop and close its downstream connection. Also if the downstream
@@ -92,43 +83,50 @@ in case of a fork or in case of receiver restart.
 
 
 
-## ZMQ exporter plugin
-
-`exp_zmq_plugin` is only supporting unidirectional mode.
-
-It feeds the JSON data to a ZMQ PUSH socket in the same fashion as the
-`zmq_plgin` for nodeos: each message starts with two native 32-bit
-integers indicating message type and options, and then JSON data
-follows. The message types are listed in `chronicle_msgtypes.h`.
-
 
 ## Websocket exporter plugin
 
-`exp_ws_plugin` exports the data to a websocket server, and it supports
-both unidirectional and bidirectional modes.
+`exp_ws_plugin` exports the data to a websocket server.
 
 The plugin connects to a specified websocket host and port and opens a
 binary stream.
 
-Each outgoing message is a JSON object with two keys: `msgtype`
-indicates the type of the message, and `data` contains the corresponding
-JSON object, such as transaction trace or table delta.
+The plugin works in one of two possible modes:
 
-In bidirectional mode, it expects that the server sends block number
+In JSON mode (`exp-ws-bin-header=false`), each outgoing message is a
+JSON object with two keys: `msgtype` indicates the type of the message,
+and `data` contains the corresponding JSON object, such as transaction
+trace or table delta.
+
+In binary header mode (`exp-ws-bin-header=true`), the message format is
+similar to that used in `zmq-plugin` for nodeos: each message starts
+with two native 32-bit unsigned integers indicating message type and
+options, and the rest of the message is JSON data. Message type values
+are available in `chronicle_msgtypes.h` header file. The second integer,
+options, is currently always zero.
+
+The binary header mode increases the exporter performance by
+approximately 15%.
+
+The exporter expects that the server sends back block number
 acknowledgements in text format, each number in an individual binary
 message.
 
 
 # Compiling
 
-Minimum requirements: Ubuntu 18.10, 3GB RAM
+Minimum requirements: Ubuntu 18.10, 3GB RAM.
+
+Earlier versions of Ubuntu have Boost library of incompatible versions,
+but it's possible to compile them from sources. Less than 3GB RAM will
+cause significant swapping during the compilation.
 
 
 ```
 sudo apt update && \
 sudo apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test-dev \
  libboost-filesystem-dev libboost-date-time-dev libboost-system-dev libboost-iostreams-dev \
- libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev pkg-config libzmq5-dev
+ libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev
 
 mkdir build
 cd build
@@ -180,7 +178,7 @@ port = 8080
 plugin = exp_ws_plugin
 exp-ws-host = 127.0.0.1
 exp-ws-port = 8800
-exp-ws-ack  = true
+exp-ws-bin-header = true
 EOT
 
 # Start the receiver to check that everything is working as
@@ -254,10 +252,6 @@ The following opttions are available from command line and `config.ini`:
 * `port = PORT` (=`8080`): Port to connect to (nodeos with state-history
   plugin);
 
-* `skip-to = BLOCK` (=`0`): At the start, jump to the block number after
-  the specified one. This will likely lead to inconsistent ABI
-  information;
-
 * `receiver-state-db-size = N` (=`1024`): State database size in MB;
 
 * `--report-every = N` (=`10000`) Print informational messages every so
@@ -270,18 +264,13 @@ Options for `exp_ws_plugin`:
 
 * `exp-ws-port = PORT` (mandatory): Websocket server port to connect to;
 
-* `exp-ws-ack = true|false` (=`false`) Enable bidirectional mode
-  (websocket server is expected to send acknowledgeements for processed
-  blocks);
+* `exp-ws-bin-header = true|false` (=`false`) Enable binary header mode
+  (message type and options as binary integers, followed by JSON);
 
 * `exp-ws-max-unack = N` (=1000): Receiver will pause at so many unacknowledged blocks;
 
 * `exp-ws-max-queue = N` (=10000): Receiver will pause if outbound queue exceeds this limit.
 
-
-Options for `exp_zmq_plugin`:
-
-* `exp-zmq-bind = ENDPOINT` (=tcp://127.0.0.1:5557): ZMQ PUSH socket binding.
 
 
 
@@ -306,14 +295,30 @@ additional patch. Newer versions of those libraries are introducing some
 incompatible changes, and the work is in progress to adapt Chronicle to
 those changes.
 
+## Release candidate 1.1
 
+* Unidirectional mode is no loner supported. The receiver must rely only
+  on confirmed block numbers.
+
+* `skip-to` option is no longer supported.
+
+* `exp_zmq_plugin` is removed because of instable work with Boost ASIO.
+
+* Newest libraries from Block One repositories are used, and the most
+  dramatic change is that channels are processed asynchronously. Also
+  all asynchronous tasks must be wrapped in `appbase` priority queue.
+
+It is planned that in future releases, `chronicle-receiver` will support
+two operational modes: the streaming mode as is supported today, and
+interactive mode where consumer would request particular blocks from
+Chronicle.
 
 
 # Souce code, license and copyright
 
 Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
-Copyright 2018 cc32d9@gmail.com
+Copyright 2018-2019 cc32d9@gmail.com
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
