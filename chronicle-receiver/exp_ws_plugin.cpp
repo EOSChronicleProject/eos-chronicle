@@ -46,7 +46,9 @@ public:
 
   string ws_host;
   string ws_port;
-  boost::beast::websocket::stream<boost::asio::ip::tcp::socket> ws;
+
+  using wstream = boost::beast::websocket::stream<boost::asio::ip::tcp::socket>;
+  std::shared_ptr<wstream> ws;
   const int ws_priority = 60;
 
   rapidjson::StringBuffer json_buffer;
@@ -56,19 +58,19 @@ public:
   uint32_t queue_maxsize;
   string async_msg;
   boost::asio::const_buffer async_out_buffer;
-  boost::asio::deadline_timer mytimer;
+  std::shared_ptr<boost::asio::deadline_timer> mytimer;
   uint32_t pause_time_msec = 0;
   uint32_t prev_ack_reported = 0;
 
-  exp_ws_plugin_impl():
-    ws(std::ref(app().get_io_service())),
-    mytimer(std::ref(app().get_io_service()))
+  exp_ws_plugin_impl()
   {};
 
   void init() {
+    ws = std::make_shared<wstream>(std::ref(app().get_io_service()));
+    mytimer = std::make_shared<boost::asio::deadline_timer>(std::ref(app().get_io_service()));
+    
     json_buffer.Reserve(1024*256);
       
-
     _js_forks_subscription =
       app().get_channel<chronicle::channels::js_forks>().subscribe
       ([this](std::shared_ptr<string> event){ on_event("FORK", event); });
@@ -111,9 +113,9 @@ public:
     ilog("Connecting to websocket server ${h}:${p}", ("h",ws_host)("p",ws_port));
     boost::asio::ip::tcp::resolver r(std::ref(app().get_io_service()));
     auto const results = r.resolve(ws_host, ws_port);
-    ws.binary(true);
-    boost::asio::connect(ws.next_layer(), results.begin(), results.end());
-    ws.handshake(ws_host, "/");
+    ws->binary(true);
+    boost::asio::connect(ws->next_layer(), results.begin(), results.end());
+    ws->handshake(ws_host, "/");
     ilog("Connected");
     async_read_acks();
     async_send_events();
@@ -126,10 +128,10 @@ public:
   
   
   void close_ws(boost::beast::websocket::close_reason reason) {
-    ws.next_layer().cancel();
-    if( ws.is_open() ) {
+    ws->next_layer().cancel();
+    if( ws->is_open() ) {
       ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
-      ws.async_close(reason, app().get_priority_queue().wrap(ws_priority, [&](error_code ec) {
+      ws->async_close(reason, app().get_priority_queue().wrap(ws_priority, [&](error_code ec) {
             if (ec) elog(ec.message());
             abort_receiver();
           }));
@@ -143,7 +145,7 @@ public:
   
   void async_read_acks() {
     auto in_buffer = std::make_shared<flat_buffer>();
-    ws.async_read
+    ws->async_read
       (*in_buffer,
        app().get_priority_queue().wrap(ws_priority, [this, in_buffer](error_code ec, size_t) {
            if (ec) {
@@ -174,8 +176,8 @@ public:
         pause_time_msec *= 2;
       }
 
-      mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
-      mytimer.async_wait(app().get_priority_queue().wrap(ws_priority, [this](const error_code ec) {
+      mytimer->expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
+      mytimer->async_wait(app().get_priority_queue().wrap(ws_priority, [this](const error_code ec) {
             async_send_events();
           }));
     }
@@ -186,7 +188,7 @@ public:
       async_msg = async_queue.front();
       async_queue.pop();
       async_out_buffer = boost::asio::const_buffer(async_msg.data(), async_msg.size());
-      ws.async_write
+      ws->async_write
         (async_out_buffer,
          app().get_priority_queue().wrap(ws_priority, [this](error_code ec, size_t) {
              if (ec) {
