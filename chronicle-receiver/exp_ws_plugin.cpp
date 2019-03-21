@@ -3,6 +3,7 @@
 #include "exp_ws_plugin.hpp"
 #include "decoder_plugin.hpp"
 #include "receiver_plugin.hpp"
+#include "chronicle_msgtypes.h"
 
 #include <queue>
 #include <boost/beast/websocket.hpp>
@@ -20,7 +21,6 @@
 
 using boost::beast::flat_buffer;
 using boost::system::error_code;
-using std::make_shared;
 
 
 static appbase::abstract_plugin& _exp_ws_plugin = app().register_plugin<exp_ws_plugin>();
@@ -30,6 +30,7 @@ namespace {
   const char* WS_PORT_OPT = "exp-ws-port";
   const char* WS_MAXUNACK_OPT = "exp-ws-max-unack";
   const char* WS_MAXQUEUE_OPT = "exp-ws-max-queue";
+  const char* WS_BINHDR = "exp-ws-bin-header";
 }
 
 class exp_ws_plugin_impl : std::enable_shared_from_this<exp_ws_plugin_impl> {
@@ -46,7 +47,8 @@ public:
 
   string ws_host;
   string ws_port;
-
+  bool use_bin_headers;
+  
   using wstream = boost::beast::websocket::stream<boost::asio::ip::tcp::socket>;
   std::shared_ptr<wstream> ws;
   const int ws_priority = 60;
@@ -54,11 +56,13 @@ public:
   rapidjson::StringBuffer json_buffer;
   rapidjson::Writer<rapidjson::StringBuffer> json_writer;
 
-  std::queue<string> async_queue;
+  using msgbuf = std::vector<unsigned char>;
+  std::queue<std::shared_ptr<msgbuf>> async_queue;
+  std::shared_ptr<msgbuf> async_msg; // this to prevent deallocation during async write
   uint32_t queue_maxsize;
-  string async_msg;
   boost::asio::const_buffer async_out_buffer;
   std::shared_ptr<boost::asio::deadline_timer> mytimer;
+  
   uint32_t pause_time_msec = 0;
   uint32_t prev_ack_reported = 0;
 
@@ -68,44 +72,83 @@ public:
   void init() {
     ws = std::make_shared<wstream>(std::ref(app().get_io_service()));
     mytimer = std::make_shared<boost::asio::deadline_timer>(std::ref(app().get_io_service()));
-    
-    json_buffer.Reserve(1024*256);
+
+    if (use_bin_headers) {
+      _js_forks_subscription =
+        app().get_channel<chronicle::channels::js_forks>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_FORK, 0, event); });
       
-    _js_forks_subscription =
-      app().get_channel<chronicle::channels::js_forks>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("FORK", event); });
-    
-    _js_blocks_subscription =
+      _js_blocks_subscription =
         app().get_channel<chronicle::channels::js_blocks>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("BLOCK", event); });
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_BLOCK, 0, event); });
     
-    _js_transaction_traces_subscription =
-      app().get_channel<chronicle::channels::js_transaction_traces>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("TX_TRACE", event); });
+      _js_transaction_traces_subscription =
+        app().get_channel<chronicle::channels::js_transaction_traces>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_TX_TRACE, 0, event); });
 
-    _js_abi_updates_subscription =
-      app().get_channel<chronicle::channels::js_abi_updates>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("ABI_UPD", event); });
+      _js_abi_updates_subscription =
+        app().get_channel<chronicle::channels::js_abi_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ABI_UPD, 0, event); });
     
-    _js_abi_removals_subscription =
-      app().get_channel<chronicle::channels::js_abi_removals>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("ABI_REM", event); });
+      _js_abi_removals_subscription =
+        app().get_channel<chronicle::channels::js_abi_removals>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ABI_REM, 0, event); });
 
-    _js_abi_errors_subscription =
-      app().get_channel<chronicle::channels::js_abi_errors>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("ABI_ERR", event); });
+      _js_abi_errors_subscription =
+        app().get_channel<chronicle::channels::js_abi_errors>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ABI_ERR, 0, event); });
 
-    _js_table_row_updates_subscription =
-      app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("TBL_ROW", event); });
+      _js_table_row_updates_subscription =
+        app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_TBL_ROW, 0, event); });
 
-    _js_receiver_pauses_subscription =
-      app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("RCVR_PAUSE", event); });
-    
-    _js_abi_decoder_errors_subscription =
-      app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
-      ([this](std::shared_ptr<string> event){ on_event("ENCODER_ERR", event); });
+      _js_abi_decoder_errors_subscription =
+        app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ENCODER_ERR, 0, event); });
+
+      _js_receiver_pauses_subscription =
+        app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_RCVR_PAUSE, 0, event); });      
+    }
+    else {
+      json_buffer.Reserve(1024*256);
+
+      _js_forks_subscription =
+        app().get_channel<chronicle::channels::js_forks>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("FORK", event); });
+      
+      _js_blocks_subscription =
+        app().get_channel<chronicle::channels::js_blocks>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("BLOCK", event); });
+      
+      _js_transaction_traces_subscription =
+        app().get_channel<chronicle::channels::js_transaction_traces>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("TX_TRACE", event); });
+      
+      _js_abi_updates_subscription =
+        app().get_channel<chronicle::channels::js_abi_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("ABI_UPD", event); });
+      
+      _js_abi_removals_subscription =
+        app().get_channel<chronicle::channels::js_abi_removals>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("ABI_REM", event); });
+      
+      _js_abi_errors_subscription =
+        app().get_channel<chronicle::channels::js_abi_errors>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("ABI_ERR", event); });
+      
+      _js_table_row_updates_subscription =
+        app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("TBL_ROW", event); });
+      
+      _js_receiver_pauses_subscription =
+        app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("RCVR_PAUSE", event); });
+      
+      _js_abi_decoder_errors_subscription =
+        app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("ENCODER_ERR", event); });
+    }
   }
 
 
@@ -114,6 +157,7 @@ public:
     boost::asio::ip::tcp::resolver r(std::ref(app().get_io_service()));
     auto const results = r.resolve(ws_host, ws_port);
     ws->binary(true);
+    ws->auto_fragment(true);
     boost::asio::connect(ws->next_layer(), results.begin(), results.end());
     ws->handshake(ws_host, "/");
     ilog("Connected");
@@ -187,7 +231,7 @@ public:
         slowdown_receiver();
       async_msg = async_queue.front();
       async_queue.pop();
-      async_out_buffer = boost::asio::const_buffer(async_msg.data(), async_msg.size());
+      async_out_buffer = boost::asio::const_buffer(async_msg->data(), async_msg->size());
       ws->async_write
         (async_out_buffer,
          app().get_priority_queue().wrap(ws_priority, [this](error_code ec, size_t) {
@@ -205,7 +249,7 @@ public:
           
       
   
-  void on_event(const char* msgtype, std::shared_ptr<string> event) {
+  void on_event_json(const char* msgtype, std::shared_ptr<string> event) {
     try {
       try {
         json_buffer.Clear();
@@ -217,8 +261,11 @@ public:
         json_writer.RawValue(event->data(), event->length(), rapidjson::kObjectType);
         json_writer.EndObject();
 
+        size_t sz = json_buffer.GetSize();
         string msg(json_buffer.GetString());
-        async_queue.push(msg);
+        auto buf = std::make_shared<msgbuf>(sz);
+        memcpy(buf->data(), msg.data(), sz);
+        async_queue.push(buf);
       }
       FC_LOG_AND_RETHROW();
     }
@@ -226,6 +273,27 @@ public:
       abort_receiver();
     }
   }
+
+
+  void on_event_bin(int32_t msgtype, int32_t msgopts, std::shared_ptr<string> event) {
+    try {
+      try {
+        auto buf = std::make_shared<std::vector<unsigned char>>(event->length()+sizeof(msgtype)+sizeof(msgopts));
+        unsigned char *ptr = buf->data();
+        memcpy(ptr, &msgtype, sizeof(msgtype));
+        ptr += sizeof(msgtype);
+        memcpy(ptr, &msgopts, sizeof(msgopts));
+        ptr += sizeof(msgopts);
+        memcpy(ptr, event->data(), event->length());
+        async_queue.push(buf);
+      }
+      FC_LOG_AND_RETHROW();
+    }
+    catch (...) {
+      abort_receiver();
+    }
+  }
+  
 };
 
 
@@ -241,8 +309,12 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
   cfg.add_options()
     (WS_HOST_OPT, bpo::value<string>(), "Websocket server host to connect to")
     (WS_PORT_OPT, bpo::value<string>(), "Websocket server port to connect to")
-    (WS_MAXUNACK_OPT, bpo::value<uint32_t>()->default_value(1000), "Receiver will pause at so many unacknowledged blocks")
-    (WS_MAXQUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Receiver will pause if outbound queue exceeds this limit")
+    (WS_MAXUNACK_OPT, bpo::value<uint32_t>()->default_value(1000),
+     "Receiver will pause at so many unacknowledged blocks")
+    (WS_MAXQUEUE_OPT, bpo::value<uint32_t>()->default_value(10000),
+     "Receiver will pause if outbound queue exceeds this limit")
+    (WS_BINHDR, bpo::value<bool>()->default_value(false),
+     "Start export messages with 32-bit native msgtype,msgopt")
     ;
 }
 
@@ -274,6 +346,8 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     my->queue_maxsize = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
     if( my->queue_maxsize == 0 )
       throw std::runtime_error("Maximum queue size must be a positive integer");
+
+    my->use_bin_headers = options.at(WS_BINHDR).as<bool>();
     
     my->init();    
     ilog("Initialized exp_ws_plugin");

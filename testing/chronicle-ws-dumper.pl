@@ -21,10 +21,12 @@ $| = 1;
 
 my $port = 8800;
 my $ack = 100;
+my $binary_hdr;
 
 my $ok = GetOptions
     ('port=i' => \$port,
-     'ack=i' => \$ack);
+     'ack=i' => \$ack,
+     'bin' => \$binary_hdr);
 
 
 if( not $ok or scalar(@ARGV) > 0 )
@@ -32,7 +34,8 @@ if( not $ok or scalar(@ARGV) > 0 )
     print STDERR "Usage: $0 [options...]\n",
     "Options:\n",
     "  --port=N        \[$port\] TCP port to listen to websocket connection\n",
-    "  --ack=N         Send acknowledgements every N blocks\n";
+    "  --ack=N         \[$ack\] Send acknowledgements every N blocks\n",
+    "  --bin           --exp-ws-bin-header is used in exporter\n";
     exit 1;
 }
 
@@ -48,27 +51,58 @@ Net::WebSocket::Server->new(
         $conn->on(
             'binary' => sub {
                 my ($conn, $msg) = @_;
-                my $data = eval {$json->decode($msg)};
-                if( $@ )
+                if( $binary_hdr )
                 {
-                    print STDERR $@, "\n\n";
-                    print STDERR $msg, "\n";
-                    exit;
-                } 
-                print $json->encode($data), "\n\n";
-                my $type = $data->{'msgtype'};
-                
-                if( $type eq 'BLOCK' )
-                {
-                    $last_block = $data->{'data'}{'block_num'};
+                    my ($msgtype, $opts, $js) = unpack('VVa*', $msg);
+                    my $data = eval {$json->decode($js)};
+                    if( $@ )
+                    {
+                        print STDERR $@, "\n\n";
+                        print STDERR $js, "\n";
+                        exit;
+                    } 
+
+                    printf("%d %d\n", $msgtype, $opts);
+                    print $json->encode($data);
+                    print "\n";
+                    
+                    if( $msgtype == 1002 )
+                    {
+                        $last_block = $data->{'block_num'};
+                    }
+                    
+                    if( ($msgtype == 1002 and $last_block - $last_ack >= $ack) or
+                        $msgtype == 1009 )
+                    {
+                        $last_ack = $last_block - 1;
+                        $conn->send_binary(sprintf("%d", $last_ack));
+                        print STDERR "ack $last_ack\n";
+                    }
                 }
-                
-                if( ($type eq 'BLOCK' and $last_block - $last_ack >= $ack) or
-                    $type eq 'RCVR_PAUSE' )
+                else
                 {
-                    $last_ack = $last_block - 1;
-                    $conn->send_binary(sprintf("%d", $last_ack));
-                    print STDERR "ack $last_ack\n";
+                    my $data = eval {$json->decode($msg)};
+                    if( $@ )
+                    {
+                        print STDERR $@, "\n\n";
+                        print STDERR $msg, "\n";
+                        exit;
+                    } 
+                    print $json->encode($data), "\n\n";
+                    my $type = $data->{'msgtype'};
+                    
+                    if( $type eq 'BLOCK' )
+                    {
+                        $last_block = $data->{'data'}{'block_num'};
+                    }
+                    
+                    if( ($type eq 'BLOCK' and $last_block - $last_ack >= $ack) or
+                        $type eq 'RCVR_PAUSE' )
+                    {
+                        $last_ack = $last_block - 1;
+                        $conn->send_binary(sprintf("%d", $last_ack));
+                        print STDERR "ack $last_ack\n";
+                    }
                 }
             },
             'disconnect' => sub {
@@ -82,3 +116,4 @@ Net::WebSocket::Server->new(
 
 
 
+    
