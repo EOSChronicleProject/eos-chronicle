@@ -21,23 +21,6 @@ thread unit_test_framework filesystem date_time system iostreams program_options
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/fc/CMakeModules")
 include(SetupTargetMacros)
 
-## load in pkg-config support
-find_package(PkgConfig REQUIRED)
-## use pkg-config to get hints for 0mq locations
-pkg_check_modules(PC_ZeroMQ REQUIRED libzmq)
-
-## use the hint from above to find where 'zmq.hpp' is located
-find_path(ZeroMQ_INCLUDE_DIR
-  NAMES zmq.hpp
-  PATHS ${PC_ZeroMQ_INCLUDE_DIRS}
-  )
-
-## use the hint from about to find the location of libzmq
-find_library(ZeroMQ_LIBRARY
-  NAMES zmq
-  PATHS ${PC_ZeroMQ_LIBRARY_DIRS}
-  )
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -55,7 +38,6 @@ add_executable(chronicle-receiver
   chronicle-receiver/receiver_plugin.cpp
   chronicle-receiver/decoder_plugin.cpp
   chronicle-receiver/exp_ws_plugin.cpp
-  chronicle-receiver/exp_zmq_plugin.cpp
 )
 
 include_directories(
@@ -66,7 +48,6 @@ include_directories(
   external/abieos/external/date/include
   external/chainbase/include
   external/fc/include
-  external/azmq
   ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver

@@ -10,6 +10,3 @@
 [submodule "external/fc"]
 	path = external/fc
 	url = https://github.com/EOSIO/fc.git
-[submodule "external/azmq"]
-	path = external/azmq
-	url = https://github.com/zeromq/azmq.git
