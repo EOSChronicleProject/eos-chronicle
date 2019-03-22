@@ -317,6 +317,15 @@ namespace json_encoder {
     native_to_json(v, state);
     dest = buffer.GetString();
   }
+
+  struct block_completed {
+    uint32_t    block_num;
+  };
+  
+  template <typename F>
+  constexpr void for_each_field(block_completed*, F f) {
+    f("block_num", member_ptr<&block_completed::block_num>{});
+  }  
 }
 
 
@@ -331,6 +340,7 @@ public:
     _js_abi_errors_chan(app().get_channel<chronicle::channels::js_abi_errors>()),
     _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>()),
     _js_receiver_pauses_chan(app().get_channel<chronicle::channels::js_receiver_pauses>()),
+    _js_block_completed_chan(app().get_channel<chronicle::channels::js_block_completed>()),
     _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>()),
     impl_buffer(0, 262144)
   {}
@@ -343,6 +353,7 @@ public:
   chronicle::channels::js_abi_errors::channel_type&          _js_abi_errors_chan;
   chronicle::channels::js_table_row_updates::channel_type&   _js_table_row_updates_chan;
   chronicle::channels::js_receiver_pauses::channel_type&     _js_receiver_pauses_chan;
+  chronicle::channels::js_block_completed::channel_type&     _js_block_completed_chan;
   chronicle::channels::js_abi_decoder_errors::channel_type&  _js_abi_decoder_errors_chan;
   
   chronicle::channels::forks::channel_type::handle               _forks_subscription;
@@ -353,6 +364,7 @@ public:
   chronicle::channels::abi_updates::channel_type::handle         _abi_updates_subscription;
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
   chronicle::channels::receiver_pauses::channel_type::handle     _receiver_pauses_subscription;
+  chronicle::channels::block_completed::channel_type::handle     _block_completed_subscription;
 
   const int channel_priority = 50;
   
@@ -428,6 +440,13 @@ public:
           on_receiver_pause(rp);
         });
     }
+    if (_js_block_completed_chan.has_subscribers()) {
+      _block_completed_subscription =
+        app().get_channel<chronicle::channels::block_completed>().subscribe
+        ([this](uint32_t block_num){
+          on_block_completed(block_num);
+        });
+    }
   }
 
   void on_fork(std::shared_ptr<chronicle::channels::fork_event> fe) {
@@ -500,10 +519,18 @@ public:
     impl_native_to_json(*rp, *output);
     _js_receiver_pauses_chan.publish(channel_priority, output);
   }
-    
+
+
+  void on_block_completed(uint32_t block_num) {
+    json_encoder::block_completed bc{block_num};
+    auto output = make_shared<string>();
+    impl_native_to_json(bc, *output);
+    _js_block_completed_chan.publish(channel_priority, output);
+  }
+  
   
   inline void report_encoder_errors(vector<string>& encoder_errors, map<string, string>& attrs) {
-    rapidjson::StringBuffer buffer(0, 1024);;
+    rapidjson::StringBuffer buffer(0, 1024);
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
     writer.StartObject();
     for (auto const& p : attrs) {

@@ -167,6 +167,8 @@ namespace chronicle {
     
     using receiver_pauses = channel_decl<struct receiver_pauses_tag, std::shared_ptr<receiver_pause>>;
 
+    using block_completed = channel_decl<struct block_completed_tag, uint32_t>;
+    
     using interactive_requests = channel_decl<struct interactive_requests_tag, uint32_t>;
   }
 }

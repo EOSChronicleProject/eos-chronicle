@@ -222,6 +222,7 @@ public:
     _abi_errors_chan(app().get_channel<chronicle::channels::abi_errors>()),
     _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>()),
     _receiver_pauses_chan(app().get_channel<chronicle::channels::receiver_pauses>()),
+    _block_completed_chan(app().get_channel<chronicle::channels::block_completed>()),
     mytimer(std::ref(app().get_io_service()))
   {};
   
@@ -266,6 +267,7 @@ public:
   chronicle::channels::abi_errors::channel_type&          _abi_errors_chan;
   chronicle::channels::table_row_updates::channel_type&   _table_row_updates_chan;
   chronicle::channels::receiver_pauses::channel_type&     _receiver_pauses_chan;
+  chronicle::channels::block_completed::channel_type&     _block_completed_chan;
 
   const int channel_priority = 50;
 
@@ -603,6 +605,8 @@ public:
     if (result.traces)
       receive_traces(*result.traces);
 
+    _block_completed_chan.publish(channel_priority, head);
+    
     if( aborting )
       return false;
     

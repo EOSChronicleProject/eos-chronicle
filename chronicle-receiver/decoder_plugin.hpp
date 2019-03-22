@@ -15,6 +15,7 @@ namespace chronicle {
     using js_table_row_updates   = channel_decl<struct js_table_row_updates_tag, std::shared_ptr<string>>;
     using js_abi_decoder_errors  = channel_decl<struct js_abi_decoder_errors_tag, std::shared_ptr<string>>;
     using js_receiver_pauses     = channel_decl<struct js_receiver_pauses_tag, std::shared_ptr<string>>;
+    using js_block_completed     = channel_decl<struct js_block_completed_tag, std::shared_ptr<string>>;
   }
 }
 

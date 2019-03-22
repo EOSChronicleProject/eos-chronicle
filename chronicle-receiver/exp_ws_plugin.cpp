@@ -42,6 +42,7 @@ public:
   chronicle::channels::js_abi_errors::channel_type::handle          _js_abi_errors_subscription;
   chronicle::channels::js_table_row_updates::channel_type::handle   _js_table_row_updates_subscription;
   chronicle::channels::js_receiver_pauses::channel_type::handle     _js_receiver_pauses_subscription;
+  chronicle::channels::js_block_completed::channel_type::handle     _js_block_completed_subscription;
   chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
 
   chronicle::channels::interactive_requests::channel_type&          _interactive_requests_chan;
@@ -112,6 +113,10 @@ public:
       _js_receiver_pauses_subscription =
         app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_RCVR_PAUSE, 0, event); });      
+
+      _js_block_completed_subscription =
+        app().get_channel<chronicle::channels::js_block_completed>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_BLOCK_COMPLETED, 0, event); });      
     }
     else {
       json_buffer.Reserve(1024*256);
@@ -148,6 +153,10 @@ public:
         app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("RCVR_PAUSE", event); });
       
+      _js_block_completed_subscription =
+        app().get_channel<chronicle::channels::js_block_completed>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("BLOCK_COMPLETED", event); });
+
       _js_abi_decoder_errors_subscription =
         app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("ENCODER_ERR", event); });
