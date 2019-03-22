@@ -49,6 +49,7 @@ public:
   string ws_host;
   string ws_port;
   bool use_bin_headers;
+  uint32_t maxunack;
   
   using wstream = boost::beast::websocket::stream<boost::asio::ip::tcp::socket>;
   std::shared_ptr<wstream> ws;
@@ -155,6 +156,9 @@ public:
 
 
   void start() {
+    if (!is_interactive_mode())
+      exporter_will_ack_blocks(maxunack);
+
     ilog("Connecting to websocket server ${h}:${p}", ("h",ws_host)("p",ws_port));
     boost::asio::ip::tcp::resolver r(std::ref(app().get_io_service()));
     auto const results = r.resolve(ws_host, ws_port);
@@ -367,10 +371,10 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     my->ws_host = options.at(WS_HOST_OPT).as<string>();
     my->ws_port = options.at(WS_PORT_OPT).as<string>();
 
-    uint32_t maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
-    if( maxunack == 0 )
+    my->maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
+    if( my->maxunack == 0 )
       throw std::runtime_error("Maximum unacked blocks must be a positive integer");
-    exporter_will_ack_blocks(maxunack);
+
     my->queue_maxsize = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
     if( my->queue_maxsize == 0 )
       throw std::runtime_error("Maximum queue size must be a positive integer");

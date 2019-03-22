@@ -287,7 +287,8 @@ public:
   
   
   void start() {
-    load_state();
+    if (!interactive_mode)
+      load_state();
     resolver->async_resolve
       (host, port,
        [this](const error_code ec, tcp::resolver::results_type results) {
@@ -1022,7 +1023,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->interactive_mode = options.at(RCV_INTERACTIVE_OPT).as<bool>();
     string dbdir = app().data_dir().native() + "/receiver-state";
     if (my->interactive_mode) {
-      my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0);
+      my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
     }
     else {
       my->db = std::make_shared<chainbase::database>
