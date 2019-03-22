@@ -181,8 +181,8 @@ public:
     }
     else {
       async_read_acks();
-      async_send_events();
     }
+    async_send_events();
   }
 
 

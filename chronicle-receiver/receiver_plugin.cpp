@@ -392,8 +392,8 @@ public:
                }
                else {
                  request_blocks();
-                 continue_read();
                }
+               continue_read();
              });
          }));
   }
@@ -497,6 +497,16 @@ public:
 
 
   void on_block_req(uint32_t block_req) {
+    const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
+    auto itr = idx.begin();
+    if( itr == idx.end() ) {
+      elog("Receiver did not process any blocks yet");
+      return;
+    }
+    if( block_req > itr->head ) {
+      elog("Requested block ${b} is higher than current head ${h}", ("b",block_req)("h", itr->head));
+      return;
+    }
     interactive_req_queue.push(block_req);
     if( interactive_req_queue.size() == 1 )
       process_interactive_reqs();
@@ -507,19 +517,20 @@ public:
     if (receiver_ready && interactive_req_queue.size() > 0 ) {
       uint32_t block_req = interactive_req_queue.front();
       interactive_req_queue.pop();
-      init_contract_abi_ctxt();
       string block_req_str = to_string(block_req);
+      string end_block_str = to_string(block_req+1);
       dlog("block ${b} requested", ("b", block_req_str));
       send_request(jvalue{jarray{{"get_blocks_request_v0"s},
               {jobject{
                   {{"start_block_num"s}, {block_req_str}},
-                    {{"end_block_num"s}, {block_req_str}},
+                    {{"end_block_num"s}, {end_block_str}},
                       {{"max_messages_in_flight"s}, {max_uint32_str}},
-                        {{"irreversible_only"s}, {false}},
-                          {{"fetch_block"s}, {true}},
-                            {{"fetch_traces"s}, {true}},
-                              {{"fetch_deltas"s}, {true}},
-                                }}}},
+                        {{"have_positions"s}, {jarray()}},
+                          {{"irreversible_only"s}, {false}},
+                            {{"fetch_block"s}, {true}},
+                              {{"fetch_traces"s}, {true}},
+                                {{"fetch_deltas"s}, {true}},
+                                  }}}},
         [&]() {process_interactive_reqs();} );
     }
   }
@@ -543,7 +554,10 @@ public:
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
     
-    if (!interactive_mode) {
+    if (interactive_mode) {
+      init_contract_abi_ctxt();
+    }
+    else {
       if( db->revision() < block_num ) {
         db->set_revision(block_num);
         dlog("set DB revision to ${r}", ("r",block_num));
@@ -627,18 +641,22 @@ public:
   
   
   void receive_block(input_buffer bin) {
-    if( head == irreversible ) {
-      ilog("Crossing irreversible block=${h}", ("h",head));
+    if (interactive_mode) {
+      ilog("block=${h}", ("h",head));
     }
-      
-    if (report_every > 0 && head % report_every == 0) {
-         uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
-         uint64_t size = db->get_segment_manager()->get_size();
-         ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
-              ("h",head)("i",irreversible)("m", free_bytes*100/size));
-         if( exporter_will_ack )
-           ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
-         ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+    else {
+      if( head == irreversible ) {
+        ilog("Crossing irreversible block=${h}", ("h",head));
+      }
+      if (report_every > 0 && head % report_every == 0) {
+        uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
+        uint64_t size = db->get_segment_manager()->get_size();
+        ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
+             ("h",head)("i",irreversible)("m", free_bytes*100/size));
+        if( exporter_will_ack )
+          ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
+        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+      }
     }
 
     auto block_ptr = std::make_shared<chronicle::channels::block>();
