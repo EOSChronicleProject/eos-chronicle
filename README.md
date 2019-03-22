@@ -308,6 +308,10 @@ those changes.
   dramatic change is that channels are processed asynchronously. Also
   all asynchronous tasks must be wrapped in `appbase` priority queue.
 
+* In addition to latest copy of ABI for each contract, the internal
+  state database stores a history of all ABI revisions for all
+  contract. This will be used in interactive mode.
+
 It is planned that in future releases, `chronicle-receiver` will support
 two operational modes: the streaming mode as is supported today, and
 interactive mode where consumer would request particular blocks from

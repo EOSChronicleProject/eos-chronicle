@@ -6,6 +6,7 @@
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/member.hpp>
+#include <boost/multi_index/composite_key.hpp>
 
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -77,11 +78,13 @@ namespace chronicle {
     state_table,
     received_blocks_table,
     contract_abi_objects_table,
+    contract_abi_history_table
   };
 
   struct by_id;
   struct by_blocknum;
   struct by_name;
+  struct by_name_and_block;
   
   // this is a singleton keeping the state of the receiver
   
@@ -115,7 +118,7 @@ namespace chronicle {
                                         received_block_object::id_type, &received_block_object::id>>,
       ordered_unique<tag<by_blocknum>, member<received_block_object, uint32_t, &received_block_object::block_index>>>>;
 
-  // serialized binary ABI for every contract
+  // latest version of serialized binary ABI for every contract
 
   struct contract_abi_object : public chainbase::object<contract_abi_objects_table, contract_abi_object> {
     template<typename Constructor, typename Allocator>
@@ -136,11 +139,40 @@ namespace chronicle {
       ordered_unique<tag<by_id>, member<contract_abi_object,
                                         contract_abi_object::id_type, &contract_abi_object::id>>,
       ordered_unique<tag<by_name>, member<contract_abi_object, uint64_t, &contract_abi_object::account>>>>;
+
+
+  // History of ABI for every contract
+
+  struct contract_abi_history : public chainbase::object<contract_abi_history_table, contract_abi_history> {
+    template<typename Constructor, typename Allocator>
+    contract_abi_history( Constructor&& c, Allocator&& a ) : abi(a) { c(*this); }
+    id_type                   id;
+    uint64_t                  account;
+    uint32_t                  block_index;
+    chainbase::shared_string  abi;
+
+    void set_abi(const std::vector<char> data) {
+      abi.resize(data.size());
+      abi.assign(data.data(), data.size());
+    }
+  };
+
+  using contract_abi_hist_index = chainbase::shared_multi_index_container<
+    contract_abi_history,
+    indexed_by<
+      ordered_unique<tag<by_id>,
+                     member<contract_abi_history, contract_abi_history::id_type, &contract_abi_history::id>>,
+      ordered_unique<tag<by_name_and_block>,
+                     composite_key<
+                       contract_abi_history,
+                       member<contract_abi_history, uint64_t, &contract_abi_history::account>,
+                       member<contract_abi_history, uint32_t, &contract_abi_history::block_index>>>>>;
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi_index)
+CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_history, chronicle::contract_abi_hist_index)
 
 
 std::vector<char> zlib_decompress(input_buffer data) {
@@ -647,6 +679,7 @@ public:
       ar->account = account;
       _abi_removals_chan.publish(channel_priority, ar);
     }
+    save_contract_abi_history(account, std::vector<char>());
   }
 
 
@@ -700,8 +733,44 @@ public:
       ae->error = e.what();
       _abi_errors_chan.publish(channel_priority, ae);
     }
+
+    save_contract_abi_history(account, data);
   }
 
+
+  void save_contract_abi_history(name account, std::vector<char> data) {
+    const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block>();
+    auto itr = idx.find(boost::make_tuple(account.value, head));
+    if( itr != idx.end() ) {
+      wlog("Multiple setabi for ${a} in the same block ${h}", ("a",(std::string)account)("h",head));
+      db->modify( *itr, [&]( chronicle::contract_abi_history& o ) {
+          o.set_abi(data);
+        });
+    }
+    else {
+      db->create<chronicle::contract_abi_history>( [&]( chronicle::contract_abi_history& o ) {
+          o.account = account.value;
+          o.block_index = head;
+          o.set_abi(data);
+        });
+    }
+    /* debugging */
+    /*
+    int count = 0;
+    auto itr2 = idx.lower_bound(boost::make_tuple(account.value, 0));
+    while( itr2 != idx.end() && itr2->account == account.value ) {
+      count++;
+      itr2++;
+    }
+    if( count == 0 ) {
+      elog("Cannot find any entries in ABI history for ${a}", ("a",(std::string)account));
+    }
+    else if( count > 2 ) {
+      dlog("${c} ABI revisions for ${a}", ("c",count)("a",(std::string)account));
+    }
+    */
+  }
+  
   
   bool get_contract_abi_ready(name account) {
     if( contract_abi_imported.count(account.value) > 0 )
@@ -872,6 +941,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->db->add_index<chronicle::state_index>();
     my->db->add_index<chronicle::received_block_index>();
     my->db->add_index<chronicle::contract_abi_index>();
+    my->db->add_index<chronicle::contract_abi_hist_index>();
     
     my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
     
