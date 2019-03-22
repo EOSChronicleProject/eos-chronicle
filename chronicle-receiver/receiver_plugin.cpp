@@ -77,13 +77,11 @@ namespace chronicle {
     state_table,
     received_blocks_table,
     contract_abi_objects_table,
-    table_id_object_table
   };
 
   struct by_id;
   struct by_blocknum;
   struct by_name;
-  struct by_tid;
   
   // this is a singleton keeping the state of the receiver
   
@@ -115,7 +113,7 @@ namespace chronicle {
     indexed_by<
       ordered_unique<tag<by_id>, member<received_block_object,
                                         received_block_object::id_type, &received_block_object::id>>,
-      ordered_unique<tag<by_blocknum>, BOOST_MULTI_INDEX_MEMBER(received_block_object, uint32_t, block_index)>>>;
+      ordered_unique<tag<by_blocknum>, member<received_block_object, uint32_t, &received_block_object::block_index>>>>;
 
   // serialized binary ABI for every contract
 
@@ -137,7 +135,7 @@ namespace chronicle {
     indexed_by<
       ordered_unique<tag<by_id>, member<contract_abi_object,
                                         contract_abi_object::id_type, &contract_abi_object::id>>,
-      ordered_unique<tag<by_name>, BOOST_MULTI_INDEX_MEMBER(contract_abi_object, uint64_t, account)>>>;
+      ordered_unique<tag<by_name>, member<contract_abi_object, uint64_t, &contract_abi_object::account>>>>;
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
