@@ -288,7 +288,12 @@ public:
   }
             
           
-      
+  inline void push_msg(std::shared_ptr<msgbuf> buf) {
+    async_queue.push(buf);
+    if( pause_time_msec > 0 )
+      mytimer->cancel();
+  }
+
   
   void on_event_json(const char* msgtype, std::shared_ptr<string> event) {
     try {
@@ -306,7 +311,7 @@ public:
         string msg(json_buffer.GetString());
         auto buf = std::make_shared<msgbuf>(sz);
         memcpy(buf->data(), msg.data(), sz);
-        async_queue.push(buf);
+        push_msg(buf);
       }
       FC_LOG_AND_RETHROW();
     }
@@ -319,14 +324,14 @@ public:
   void on_event_bin(int32_t msgtype, int32_t msgopts, std::shared_ptr<string> event) {
     try {
       try {
-        auto buf = std::make_shared<std::vector<unsigned char>>(event->length()+sizeof(msgtype)+sizeof(msgopts));
+        auto buf = std::make_shared<msgbuf>(event->length()+sizeof(msgtype)+sizeof(msgopts));
         unsigned char *ptr = buf->data();
         memcpy(ptr, &msgtype, sizeof(msgtype));
         ptr += sizeof(msgtype);
         memcpy(ptr, &msgopts, sizeof(msgopts));
         ptr += sizeof(msgopts);
         memcpy(ptr, event->data(), event->length());
-        async_queue.push(buf);
+        push_msg(buf);
       }
       FC_LOG_AND_RETHROW();
     }
