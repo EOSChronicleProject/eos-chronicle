@@ -8,7 +8,6 @@
 #include <queue>
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/core.hpp>
-#include <boost/lockfree/queue.hpp>
 #include <stdexcept>
 	
 #include "rapidjson/reader.h"
@@ -45,6 +44,8 @@ public:
   chronicle::channels::js_receiver_pauses::channel_type::handle     _js_receiver_pauses_subscription;
   chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
 
+  chronicle::channels::interactive_requests::channel_type&          _interactive_requests_chan;
+  
   string ws_host;
   string ws_port;
   bool use_bin_headers;
@@ -66,7 +67,8 @@ public:
   uint32_t pause_time_msec = 0;
   uint32_t prev_ack_reported = 0;
 
-  exp_ws_plugin_impl()
+  exp_ws_plugin_impl() :
+    _interactive_requests_chan(app().get_channel<chronicle::channels::interactive_requests>())
   {};
 
   void init() {
@@ -161,8 +163,13 @@ public:
     boost::asio::connect(ws->next_layer(), results.begin(), results.end());
     ws->handshake(ws_host, "/");
     ilog("Connected");
-    async_read_acks();
-    async_send_events();
+    if (is_interactive_mode()) {
+      async_read_interactive_reqs();
+    }
+    else {
+      async_read_acks();
+      async_send_events();
+    }
   }
 
 
@@ -211,6 +218,27 @@ public:
   }
 
 
+  void async_read_interactive_reqs() {
+    auto in_buffer = std::make_shared<flat_buffer>();
+    ws->async_read
+      (*in_buffer,
+       app().get_priority_queue().wrap(ws_priority, [this, in_buffer](error_code ec, size_t) {
+           if (ec) {
+             close_ws(boost::beast::websocket::close_code::unknown_data);
+           }
+           else {
+             const auto in_data = in_buffer->data();
+             uint64_t block_req = std::stoul(string((const char*)in_data.data(), in_data.size()));
+             if( block_req > UINT32_MAX )
+               throw std::runtime_error("Requested block number higher than UINT32_MAX");
+             _interactive_requests_chan.publish(ws_priority, block_req);
+             async_read_interactive_reqs();
+           }
+         }));
+  }
+  
+
+  
   void async_send_events() {
     if( async_queue.empty() ) {
       if( pause_time_msec == 0 ) {
