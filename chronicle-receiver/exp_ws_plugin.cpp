@@ -366,16 +366,19 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
 
   
 void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
+  if (is_noexport_opt(options))
+    return;
+  
   try {
     donot_start_receiver_before(this, "exp_ws_plugin");
 
     bool opt_missing = false;
     if( options.count(WS_HOST_OPT) != 1 ) {
-      elog("${o} not specified => exp_ws_plugin disabled.", ("o",WS_HOST_OPT));
+      elog("${o} not specified, as required by exp_ws_plugin", ("o",WS_HOST_OPT));
       opt_missing = true;
     }
     if( options.count(WS_PORT_OPT) != 1 ) {
-      elog("${o} not specified => exp_ws_plugin disabled.", ("o",WS_PORT_OPT));
+      elog("${o} not specified, as required by exp_ws_plugin", ("o",WS_PORT_OPT));
       opt_missing = true;
     }
 
@@ -404,13 +407,17 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
 
 
 void exp_ws_plugin::plugin_startup(){
-  my->start();
-  ilog("Started exp_ws_plugin");
+  if (!is_noexport_mode()) {
+    my->start();
+    ilog("Started exp_ws_plugin");
+  }
 }
 
 void exp_ws_plugin::plugin_shutdown() {
-  my->stop();
-  ilog("exp_ws_plugin stopped");
+  if (!is_noexport_mode()) {
+    my->stop();
+    ilog("exp_ws_plugin stopped");
+  }
 }
 
 

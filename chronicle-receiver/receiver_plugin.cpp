@@ -71,6 +71,7 @@ namespace {
   const char* RCV_EVERY_OPT = "report-every";
   const char* RCV_MAX_QUEUE_OPT = "max-queue-size";
   const char* RCV_INTERACTIVE_OPT = "interactive";
+  const char* RCV_NOEXPORT_OPT = "noexport";
 }
 
 
@@ -241,6 +242,8 @@ public:
   bool                                  interactive_mode;
   chronicle::channels::interactive_requests::channel_type::handle _interactive_requests_subscription;  
   std::queue<uint32_t>                  interactive_req_queue;
+
+  bool                                  noexport_mode;
   
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
@@ -480,7 +483,10 @@ public:
 
     uint32_t start_block = head + 1;
     ilog("Start block: ${b}", ("b",start_block));
-    
+
+    bool fetch_block = noexport_mode ? false:true;
+    bool fetch_traces = noexport_mode ? false:true;
+    bool fetch_deltas = true;
     send_request(jvalue{jarray{{"get_blocks_request_v0"s},
             {jobject{
                 {{"start_block_num"s}, {to_string(start_block)}},
@@ -488,9 +494,9 @@ public:
                     {{"max_messages_in_flight"s}, {max_uint32_str}},
                       {{"have_positions"s}, {positions}},
                         {{"irreversible_only"s}, {false}},
-                          {{"fetch_block"s}, {true}},
-                            {{"fetch_traces"s}, {true}},
-                              {{"fetch_deltas"s}, {true}},
+                          {{"fetch_block"s}, {fetch_block}},
+                            {{"fetch_traces"s}, {fetch_traces}},
+                              {{"fetch_deltas"s}, {fetch_deltas}},
                                 }}}},
       [&]{});
   }
@@ -635,6 +641,17 @@ public:
       }
       db->commit(commit_rev);
     }
+
+    if (report_every > 0 && head % report_every == 0) {
+      uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
+      uint64_t size = db->get_segment_manager()->get_size();
+      ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
+           ("h",head)("i",irreversible)("m", free_bytes*100/size));
+      if( exporter_will_ack )
+        ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
+      ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+    }
+    
     return true;
   }
 
@@ -644,19 +661,8 @@ public:
     if (interactive_mode) {
       ilog("block=${h}", ("h",head));
     }
-    else {
-      if( head == irreversible ) {
-        ilog("Crossing irreversible block=${h}", ("h",head));
-      }
-      if (report_every > 0 && head % report_every == 0) {
-        uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
-        uint64_t size = db->get_segment_manager()->get_size();
-        ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
-             ("h",head)("i",irreversible)("m", free_bytes*100/size));
-        if( exporter_will_ack )
-          ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
-        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
-      }
+    else if (head == irreversible) {
+      ilog("Crossing irreversible block=${h}", ("h",head));
     }
 
     auto block_ptr = std::make_shared<chronicle::channels::block>();
@@ -716,7 +722,7 @@ public:
           }
         }
       }
-      else {
+      else if (!noexport_mode) {
         if (bltd->table_delta.name == "contract_row" && 
             (_table_row_updates_chan.has_subscribers() || _abi_errors_chan.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
@@ -1032,6 +1038,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_EVERY_OPT, bpo::value<uint32_t>()->default_value(10000), "Report current state every N blocks")
     (RCV_MAX_QUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Maximum size of appbase priority queue")
     (RCV_INTERACTIVE_OPT, bpo::value<bool>()->default_value(false), "Start in interactive read-only mode")
+    (RCV_NOEXPORT_OPT, bpo::value<bool>()->default_value(false), "Disable all export and scan for ABI updates only")
     ;
 }
 
@@ -1042,7 +1049,11 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       throw std::runtime_error("--data-dir option is required");
     }
 
+    my->noexport_mode = is_noexport_opt(options);
     my->interactive_mode = options.at(RCV_INTERACTIVE_OPT).as<bool>();
+    if( my->noexport_mode && my->interactive_mode )
+      throw std::runtime_error("interactive and noexport options cannot be true at the same time");
+    
     string dbdir = app().data_dir().native() + "/receiver-state";
     if (my->interactive_mode) {
       my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
@@ -1123,12 +1134,18 @@ bool receiver_plugin::is_interactive() {
   return my->interactive_mode;
 }
 
+bool receiver_plugin::is_noexport() {
+  return my->noexport_mode;
+}
+
 
 void receiver_plugin::exporter_will_ack_blocks(uint32_t max_unconfirmed) {
   assert(!my->exporter_will_ack);
   assert(max_unconfirmed > 0);
   if (my->interactive_mode) 
     throw runtime_error("Exporter must not acknowledge blocks in interactive mode");
+  if (my->noexport_mode) 
+    throw runtime_error("Exporter must not acknowledge blocks in noexport mode");
   my->exporter_will_ack = true;
   my->exporter_max_unconfirmed = max_unconfirmed;
   ilog("Receiver will pause at ${u} unacknowledged blocks", ("u", my->exporter_max_unconfirmed));
@@ -1170,6 +1187,13 @@ void receiver_plugin::abort_receiver() {
   }
 }
 
+
+
+bool is_noexport_opt(const variables_map& options)
+{
+  return options.at(RCV_NOEXPORT_OPT).as<bool>();
+}
+  
 
 static bool have_exporter = false;
 

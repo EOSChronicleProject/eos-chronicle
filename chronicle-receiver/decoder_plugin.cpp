@@ -563,6 +563,8 @@ void decoder_plugin::set_program_options( options_description& cli, options_desc
 
   
 void decoder_plugin::plugin_initialize( const variables_map& options ) {
+  if (is_noexport_opt(options))
+    return;
   try {
     donot_start_receiver_before(this, "decoder_plugin");
     ilog("Initialized decoder_plugin");
@@ -572,12 +574,16 @@ void decoder_plugin::plugin_initialize( const variables_map& options ) {
 
 
 void decoder_plugin::plugin_startup(){
-  my->start();
-  ilog("Started decoder_plugin");
+  if (!is_noexport_mode()) {
+    my->start();
+    ilog("Started decoder_plugin");
+  }
 }
 
 void decoder_plugin::plugin_shutdown() {
-  ilog("decoder_plugin stopped");
+  if (!is_noexport_mode()) {
+    ilog("decoder_plugin stopped");
+  }
 }
 
 

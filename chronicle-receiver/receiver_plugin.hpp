@@ -187,6 +187,8 @@ public:
 
   bool is_interactive();
   void request_block(uint32_t block_num);
+
+  bool is_noexport();
   
   void exporter_will_ack_blocks(uint32_t max_unconfirmed);
   void ack_block(uint32_t block_num);
@@ -202,6 +204,8 @@ private:
 
 // Global functions
 
+bool is_noexport_opt(const variables_map& options);
+
 extern receiver_plugin* receiver_plug;
 
 void exporter_initialized();
@@ -209,7 +213,12 @@ void exporter_initialized();
 inline bool is_interactive_mode() {
   return receiver_plug->is_interactive();
 }
-  
+
+inline bool is_noexport_mode() {
+  return receiver_plug->is_noexport();
+}
+
+
 void exporter_will_ack_blocks(uint32_t max_unconfirmed);
 
 inline void ack_block(uint32_t block_num) {
