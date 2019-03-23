@@ -45,12 +45,19 @@ stop and close its downstream connection. Also if the downstream
 connection closes, the receiver will stop itself and close the
 connection to `nodeos`.
 
-The primary job of `chronicle-receiver` is as follows:
+
+## Streaming mode
+
+By default `chronicle-receiver` starts in streaming mode, and operates
+as follows:
+
+* it reads all available blocks sequentially from state history.
 
 * it monitors account changes, and as soon as a new ABI is set on a
-  contract, it stores a copy of ABI in its state memory.
+  contract, it stores a copy of ABI in its state memory. The state
+  memory keeps all revisions of every contract ABI.
 
-* upon receiving transactoin traces and table deltas, it tries using the
+* upon receiving transaction traces and table deltas, it tries using the
   ABI and decoding the raw binary data into the ABI-defined structures.
 
 * all data received from `state_history_plugin` is converted to JSON
@@ -60,8 +67,34 @@ The primary job of `chronicle-receiver` is as follows:
 
 * it feeds all JSON data and all error events to the exporter plugin,
   and the exporter plugin pushes the JSON data to its consumer. As
-  described above, the consumer may or may not send acknowledgements for
-  processed block numbers.
+  described above, the consumer must send acknowledgements for processed
+  block numbers.
+
+
+## Interactive mode
+
+In interactive mode, `chronicle-receiver` uses the state database
+populated by another receiver process that is running in streaming
+mode. Only one process is allowed to run in streaming mode, and multiple
+processes can be started in interactive mode.
+
+The exporter plugin, or probably some other plugin, receives a request
+for particular block number. This request is passed to the receiver and
+requested from `state_history_plugin`.
+
+During the processing, the decoder retrieves required contract ABI from
+its ABI history, so that it's the latest copy from a block number that
+is below the requested block.
+
+Then, the same way as in streaming mode, the decoded data is translated
+into JSON and passed to the exporter plugin.
+
+The receiver does not expect any acknowledgements in interactive mode.
+
+Note that in case of `exp_ws_plugin`, you need to specify a different
+TCP port of the websocket server, so that it does not interfere with the
+websocket communication in streaming mode.
+
 
 
 ## State database
@@ -244,7 +277,7 @@ The following options are available from command-line only:
   name/path for library users. An example file that is only printing
   error messages is located in `examples/` folder.
 
-The following opttions are available from command line and `config.ini`:
+The following options are available from command line and `config.ini`:
 
 * `host = HOST` (=`localhost`): Host to connect to (nodeos with
   state_history_plugin);
@@ -254,8 +287,14 @@ The following opttions are available from command line and `config.ini`:
 
 * `receiver-state-db-size = N` (=`1024`): State database size in MB;
 
-* `--report-every = N` (=`10000`) Print informational messages every so
+* `report-every = N` (=`10000`) Print informational messages every so
   many blocks;
+
+* `max-queue-size = N` (=`10000`) If the asynchronous processing queue
+  reaches this limit, the receiver will pause.
+
+* `interactive = true|false` (=`false`) Run the receiver in interactive
+  mode.
 
 
 Options for `exp_ws_plugin`:
@@ -310,12 +349,10 @@ those changes.
 
 * In addition to latest copy of ABI for each contract, the internal
   state database stores a history of all ABI revisions for all
-  contract. This will be used in interactive mode.
+  contract. This is used in interactive mode.
 
-It is planned that in future releases, `chronicle-receiver` will support
-two operational modes: the streaming mode as is supported today, and
-interactive mode where consumer would request particular blocks from
-Chronicle.
+* Added interactive mode
+
 
 
 # Souce code, license and copyright
