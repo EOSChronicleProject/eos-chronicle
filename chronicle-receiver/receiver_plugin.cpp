@@ -342,6 +342,14 @@ public:
       irreversible = itr->irreversible;
       irreversible_id = itr->irreversible_id;
     }
+    else {
+      ilog("Re-scanning the state histiry from genesis. Issuing an explicit fork event");
+      auto fe = std::make_shared<chronicle::channels::fork_event>();
+      fe->fork_block_num = 0;
+      fe->depth = 0;
+      fe->fork_reason = chronicle::channels::fork_reason_val::resync;
+      _forks_chan.publish(channel_priority, fe);
+    }
 
     if( did_undo ) {
       ilog("Reverted to block=${b}, issuing an explicit fork event", ("b",head));

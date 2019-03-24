@@ -14,13 +14,15 @@ namespace chronicle {
     
     enum class fork_reason_val : uint8_t {
       network  = 1, // fork occurred in the EOSIO network
-      restart = 2, // explicit fork on receiver restart
+      restart = 2,  // explicit fork on receiver restart
+      resync = 3,   // full resync from the genesis
     };
     
     inline string to_string(fork_reason_val reason) {
       switch (reason) {
       case fork_reason_val::network: return "network";
       case fork_reason_val::restart: return "restart";
+      case fork_reason_val::resync:  return "resync";
       }
       return "unknown";
     }
