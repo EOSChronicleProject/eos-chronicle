@@ -1006,6 +1006,7 @@ public:
     try {
       elog("ERROR: ${e}", ("e",ec.message()));
       close();
+      abort_receiver();
     } catch (...) {
       elog("ERROR: exception while closing");
     }
