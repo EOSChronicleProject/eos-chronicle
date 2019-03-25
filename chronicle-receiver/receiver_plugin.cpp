@@ -72,6 +72,7 @@ namespace {
   const char* RCV_MAX_QUEUE_OPT = "max-queue-size";
   const char* RCV_INTERACTIVE_OPT = "interactive";
   const char* RCV_NOEXPORT_OPT = "noexport";
+  const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
 }
 
 
@@ -244,6 +245,7 @@ public:
   std::queue<uint32_t>                  interactive_req_queue;
 
   bool                                  noexport_mode;
+  bool                                  skip_block_events;
   
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
@@ -492,7 +494,7 @@ public:
     uint32_t start_block = head + 1;
     ilog("Start block: ${b}", ("b",start_block));
 
-    bool fetch_block = noexport_mode ? false:true;
+    bool fetch_block = (noexport_mode || skip_block_events) ? false:true;
     bool fetch_traces = noexport_mode ? false:true;
     bool fetch_deltas = true;
     send_request(jvalue{jarray{{"get_blocks_request_v0"s},
@@ -534,6 +536,9 @@ public:
       string block_req_str = to_string(block_req);
       string end_block_str = to_string(block_req+1);
       dlog("block ${b} requested", ("b", block_req_str));
+      bool fetch_block = skip_block_events ? false:true;
+      bool fetch_traces = true;
+      bool fetch_deltas = true;
       send_request(jvalue{jarray{{"get_blocks_request_v0"s},
               {jobject{
                   {{"start_block_num"s}, {block_req_str}},
@@ -541,9 +546,9 @@ public:
                       {{"max_messages_in_flight"s}, {max_uint32_str}},
                         {{"have_positions"s}, {jarray()}},
                           {{"irreversible_only"s}, {false}},
-                            {{"fetch_block"s}, {true}},
-                              {{"fetch_traces"s}, {true}},
-                                {{"fetch_deltas"s}, {true}},
+                            {{"fetch_block"s}, {fetch_block}},
+                              {{"fetch_traces"s}, {fetch_traces}},
+                                {{"fetch_deltas"s}, {fetch_deltas}},
                                   }}}},
         [&]() {process_interactive_reqs();} );
     }
@@ -1051,6 +1056,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_MAX_QUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Maximum size of appbase priority queue")
     (RCV_INTERACTIVE_OPT, bpo::value<bool>()->default_value(false), "Start in interactive read-only mode")
     (RCV_NOEXPORT_OPT, bpo::value<bool>()->default_value(false), "Disable all export and scan for ABI updates only")
+    (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
     ;
 }
 
@@ -1091,6 +1097,8 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->port = options.at(RCV_PORT_OPT).as<string>();
     my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
     my->max_queue_size = options.at(RCV_MAX_QUEUE_OPT).as<uint32_t>();
+
+    my->skip_block_events = options.at(RCV_SKIP_BLOCK_EVT_OPT).as<bool>();
     
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),

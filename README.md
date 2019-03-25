@@ -296,6 +296,14 @@ The following options are available from command line and `config.ini`:
 * `interactive = true|false` (=`false`) Run the receiver in interactive
   mode.
 
+* `noexport = true|false` (=`false`) Disable all export. This will allow
+  `chronicle-receiver` scan the state history and save all ABI history
+  only.
+
+* `skip-block-events = true|false` (=`false`) Disable BLOCK events in
+  export. This saves CPU time if you don't need block attributes, such
+  as BP signatures and block ID.
+
 
 Options for `exp_ws_plugin`:
 
