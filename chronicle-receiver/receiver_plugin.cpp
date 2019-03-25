@@ -1099,6 +1099,8 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->max_queue_size = options.at(RCV_MAX_QUEUE_OPT).as<uint32_t>();
 
     my->skip_block_events = options.at(RCV_SKIP_BLOCK_EVT_OPT).as<bool>();
+    if( my->skip_block_events )
+      ilog("Skipping BLOCK events");
     
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
