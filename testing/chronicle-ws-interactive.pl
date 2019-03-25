@@ -52,6 +52,11 @@ my $json = JSON->new->pretty->canonical;
 my %blocks_requested;
 
 
+$SIG{INT} = sub {
+    print STDERR "Unprocessed blocks: \n", join("\n", sort keys %blocks_requested), "\n";
+    die();
+};
+
 Net::WebSocket::Server->new(
     listen => $port,
     on_connect => sub {
