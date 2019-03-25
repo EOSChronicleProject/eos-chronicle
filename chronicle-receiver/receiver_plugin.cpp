@@ -496,7 +496,7 @@ public:
     uint32_t start_block = head + 1;
     ilog("Start block: ${b}", ("b",start_block));
 
-    bool fetch_block = (noexport_mode || skip_block_events) ? false:true;
+    bool fetch_block = noexport_mode ? false:true;
     bool fetch_traces = noexport_mode ? false:true;
     bool fetch_deltas = true;
     send_request(jvalue{jarray{{"get_blocks_request_v0"s},
@@ -538,7 +538,7 @@ public:
       string block_req_str = to_string(block_req);
       string end_block_str = to_string(block_req+1);
       dlog("block ${b} requested", ("b", block_req_str));
-      bool fetch_block = skip_block_events ? false:true;
+      bool fetch_block = true;
       bool fetch_traces = true;
       bool fetch_deltas = skip_table_deltas ? false:true;
       send_request(jvalue{jarray{{"get_blocks_request_v0"s},
@@ -691,7 +691,9 @@ public:
     if (!bin_to_native(block_ptr->block, error, bin))
       throw runtime_error("block conversion error: " + error);
     block_timestamp = block_ptr->block.timestamp;
-    _blocks_chan.publish(channel_priority, block_ptr);
+    if (!skip_block_events) {
+      _blocks_chan.publish(channel_priority, block_ptr);
+    }
   }
 
 
