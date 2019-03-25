@@ -73,6 +73,7 @@ namespace {
   const char* RCV_INTERACTIVE_OPT = "interactive";
   const char* RCV_NOEXPORT_OPT = "noexport";
   const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
+  const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
 }
 
 
@@ -246,6 +247,7 @@ public:
 
   bool                                  noexport_mode;
   bool                                  skip_block_events;
+  bool                                  skip_table_deltas;
   
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
@@ -538,7 +540,7 @@ public:
       dlog("block ${b} requested", ("b", block_req_str));
       bool fetch_block = skip_block_events ? false:true;
       bool fetch_traces = true;
-      bool fetch_deltas = true;
+      bool fetch_deltas = skip_table_deltas ? false:true;
       send_request(jvalue{jarray{{"get_blocks_request_v0"s},
               {jobject{
                   {{"start_block_num"s}, {block_req_str}},
@@ -738,7 +740,7 @@ public:
           }
         }
       }
-      else if (!noexport_mode) {
+      else if (!noexport_mode && !skip_table_deltas) {
         if (bltd->table_delta.name == "contract_row" && 
             (_table_row_updates_chan.has_subscribers() || _abi_errors_chan.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
@@ -1057,6 +1059,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_INTERACTIVE_OPT, bpo::value<bool>()->default_value(false), "Start in interactive read-only mode")
     (RCV_NOEXPORT_OPT, bpo::value<bool>()->default_value(false), "Disable all export and scan for ABI updates only")
     (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
+    (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
     ;
 }
 
@@ -1101,6 +1104,10 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->skip_block_events = options.at(RCV_SKIP_BLOCK_EVT_OPT).as<bool>();
     if( my->skip_block_events )
       ilog("Skipping BLOCK events");
+
+    my->skip_table_deltas = options.at(RCV_SKIP_DELTAS_OPT).as<bool>();
+    if( my->skip_table_deltas )
+      ilog("Skipping table delta events");
     
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),

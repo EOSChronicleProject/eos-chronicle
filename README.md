@@ -304,6 +304,8 @@ The following options are available from command line and `config.ini`:
   export. This saves CPU time if you don't need block attributes, such
   as BP signatures and block ID.
 
+* `skip-table-deltas = true|false` (=`false`) Disable table delta events
+  in the export.
 
 Options for `exp_ws_plugin`:
 
