@@ -633,7 +633,10 @@ public:
     if (result.traces)
       receive_traces(*result.traces);
 
-    _block_completed_chan.publish(channel_priority, head);
+    auto bf = std::make_shared<chronicle::channels::block_finished>();
+    bf->block_num = head;
+    bf->last_irreversible = irreversible;
+    _block_completed_chan.publish(channel_priority, bf);
     
     if( aborting )
       return false;

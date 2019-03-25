@@ -169,7 +169,18 @@ namespace chronicle {
     
     using receiver_pauses = channel_decl<struct receiver_pauses_tag, std::shared_ptr<receiver_pause>>;
 
-    using block_completed = channel_decl<struct block_completed_tag, uint32_t>;
+    struct block_finished {
+      uint32_t                        block_num;
+      uint32_t                        last_irreversible;
+    };
+
+    template <typename F>
+    constexpr void for_each_field(block_finished*, F f) {
+      f("block_num", member_ptr<&block_finished::block_num>{});
+      f("last_irreversible", member_ptr<&block_finished::last_irreversible>{});
+    }
+
+    using block_completed = channel_decl<struct block_completed_tag, std::shared_ptr<block_finished>>;
     
     using interactive_requests = channel_decl<struct interactive_requests_tag, uint32_t>;
   }

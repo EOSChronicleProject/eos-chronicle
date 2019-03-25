@@ -317,15 +317,6 @@ namespace json_encoder {
     native_to_json(v, state);
     dest = buffer.GetString();
   }
-
-  struct block_completed {
-    uint32_t    block_num;
-  };
-  
-  template <typename F>
-  constexpr void for_each_field(block_completed*, F f) {
-    f("block_num", member_ptr<&block_completed::block_num>{});
-  }  
 }
 
 
@@ -443,8 +434,8 @@ public:
     if (_js_block_completed_chan.has_subscribers()) {
       _block_completed_subscription =
         app().get_channel<chronicle::channels::block_completed>().subscribe
-        ([this](uint32_t block_num){
-          on_block_completed(block_num);
+        ([this](std::shared_ptr<block_finished> bf){
+          on_block_completed(bf);
         });
     }
   }
@@ -521,10 +512,9 @@ public:
   }
 
 
-  void on_block_completed(uint32_t block_num) {
-    json_encoder::block_completed bc{block_num};
+  void on_block_completed(std::shared_ptr<block_finished> bf) {
     auto output = make_shared<string>();
-    impl_native_to_json(bc, *output);
+    impl_native_to_json(*bf, *output);
     _js_block_completed_chan.publish(channel_priority, output);
   }
   
