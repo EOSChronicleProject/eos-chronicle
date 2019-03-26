@@ -244,7 +244,8 @@ public:
   bool                                  interactive_mode;
   chronicle::channels::interactive_requests::channel_type::handle _interactive_requests_subscription;  
   std::queue<uint32_t>                  interactive_req_queue;
-
+  bool                                  interactive_req_pending = false;
+  
   bool                                  noexport_mode;
   bool                                  skip_block_events;
   bool                                  skip_table_deltas;
@@ -404,8 +405,7 @@ public:
                receiver_ready = true;
                if (interactive_mode) {
                  process_interactive_reqs();
-               }
-               else {
+               } else {
                  request_blocks();
                }
                continue_read();
@@ -525,22 +525,23 @@ public:
       elog("Requested block ${b} is higher than current head ${h}", ("b",block_req)("h", itr->head));
       return;
     }
+    dlog("block ${b} requested, inserting in the queue", ("b", block_req));
     interactive_req_queue.push(block_req);
-    if( interactive_req_queue.size() == 1 )
-      process_interactive_reqs();
+    process_interactive_reqs();
   }
 
   
   void process_interactive_reqs() {
-    if (receiver_ready && interactive_req_queue.size() > 0 ) {
+    if (receiver_ready && !interactive_req_pending && interactive_req_queue.size() > 0 ) {
       uint32_t block_req = interactive_req_queue.front();
       interactive_req_queue.pop();
       string block_req_str = to_string(block_req);
       string end_block_str = to_string(block_req+1);
-      dlog("block ${b} requested", ("b", block_req_str));
+      dlog("requesting block ${b}", ("b", block_req_str));
       bool fetch_block = true;
       bool fetch_traces = true;
       bool fetch_deltas = skip_table_deltas ? false:true;
+      interactive_req_pending = true;
       send_request(jvalue{jarray{{"get_blocks_request_v0"s},
               {jobject{
                   {{"start_block_num"s}, {block_req_str}},
@@ -552,7 +553,7 @@ public:
                               {{"fetch_traces"s}, {fetch_traces}},
                                 {{"fetch_deltas"s}, {fetch_deltas}},
                                   }}}},
-        [&]() {process_interactive_reqs();} );
+        [&]() {} );
     }
   }
     
@@ -576,6 +577,9 @@ public:
     checksum256 block_id = result.this_block->block_id;
     
     if (interactive_mode) {
+      dlog("received result for block ${b}", ("b", block_num));
+      interactive_req_pending = false;
+      process_interactive_reqs();
       init_contract_abi_ctxt();
     }
     else {
@@ -658,16 +662,16 @@ public:
         commit_rev = exporter_acked_block;
       }
       db->commit(commit_rev);
-    }
-
-    if (report_every > 0 && head % report_every == 0) {
-      uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
-      uint64_t size = db->get_segment_manager()->get_size();
-      ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
-           ("h",head)("i",irreversible)("m", free_bytes*100/size));
-      if( exporter_will_ack )
-        ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
-      ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+    
+      if (report_every > 0 && head % report_every == 0) {
+        uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
+        uint64_t size = db->get_segment_manager()->get_size();
+        ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
+             ("h",head)("i",irreversible)("m", free_bytes*100/size));
+        if( exporter_will_ack )
+          ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
+        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+      }
     }
     
     return true;
@@ -676,10 +680,7 @@ public:
   
   
   void receive_block(input_buffer bin) {
-    if (interactive_mode) {
-      ilog("block=${h}", ("h",head));
-    }
-    else if (head == irreversible) {
+    if (head == irreversible) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
 
@@ -1140,7 +1141,7 @@ void receiver_plugin::start_after_dependencies() {
   
   if( mustwait ) {
     ilog("Waiting for dependent plugins");
-    my->mytimer.expires_from_now(boost::posix_time::seconds(1));
+    my->mytimer.expires_from_now(boost::posix_time::milliseconds(50));
     my->mytimer.async_wait(boost::bind(&receiver_plugin::start_after_dependencies, this));
   }
   else {
