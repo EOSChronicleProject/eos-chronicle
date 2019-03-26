@@ -669,7 +669,8 @@ public:
         ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
              ("h",head)("i",irreversible)("m", free_bytes*100/size));
         if( exporter_will_ack )
-          ilog("Exporter acknowledged block=${b}", ("b", exporter_acked_block));
+          ilog("Exporter acknowledged block=${b}, unacknowledged=${u}",
+               ("b", exporter_acked_block)("u", head-exporter_acked_block));
         ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
       }
     }
