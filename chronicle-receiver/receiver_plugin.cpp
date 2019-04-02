@@ -348,7 +348,7 @@ public:
       irreversible_id = itr->irreversible_id;
     }
     else {
-      ilog("Re-scanning the state histiry from genesis. Issuing an explicit fork event");
+      ilog("Re-scanning the state history from genesis. Issuing an explicit fork event");
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->fork_block_num = 0;
       fe->depth = 0;
@@ -602,6 +602,9 @@ public:
             throw runtime_error(std::string("Cannot rollback, no undo stack at revision ")+
                                 std::to_string(db->revision()));
           }
+
+          if( exporter_will_ack && exporter_acked_block > block_num )
+            exporter_acked_block = block_num;
 
           auto fe = std::make_shared<chronicle::channels::fork_event>();
           fe->fork_block_num = block_num;
@@ -1189,7 +1192,7 @@ void receiver_plugin::ack_block(uint32_t block_num) {
   assert(my->exporter_will_ack);
   if( block_num < my->exporter_acked_block ) {
     elog("Exporter acked block=${a}, but block=${k} was already acknowledged",
-         ("a",block_num)("b",my->exporter_acked_block));
+         ("a",block_num)("k",my->exporter_acked_block));
     throw runtime_error("Exporter acked block below prevuously acked one");
   }
   my->exporter_acked_block = block_num;
