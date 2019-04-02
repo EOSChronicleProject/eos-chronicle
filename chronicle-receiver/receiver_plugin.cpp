@@ -584,8 +584,8 @@ public:
     }
     else {
       if( db->revision() < block_num ) {
+        dlog("setting DB revision to ${r}", ("r",block_num));
         db->set_revision(block_num);
-        dlog("set DB revision to ${r}", ("r",block_num));
       }
       
       if( block_num > last_irreversoble_num ) {
