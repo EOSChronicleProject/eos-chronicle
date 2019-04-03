@@ -583,9 +583,11 @@ public:
       init_contract_abi_ctxt();
     }
     else {
-      if( db->revision() < block_num ) {
-        dlog("setting DB revision to ${r}", ("r",block_num));
-        db->set_revision(block_num);
+      if( db->revision() < block_num-1 ) {
+        uint32_t newrev = block_num-1;
+        dlog("Current DB revision: ${r}. Setting to ${n}", ("r",db->revision())("n",newrev));
+        dlog("Acknowledged: ${a}", ("a",exporter_acked_block));
+        db->set_revision(newrev);
       }
       
       if( block_num > last_irreversoble_num ) {
@@ -1041,6 +1043,7 @@ public:
     if( stream.use_count() > 0 && stream->is_open() ) {
       stream->next_layer().close();
     }
+    aborting = true;
   }
 };
 
@@ -1219,7 +1222,6 @@ void receiver_plugin::add_dependency(appbase::abstract_plugin* plug, string plug
 void receiver_plugin::abort_receiver() {
   if( my ) {
     my->close();
-    my->aborting = true;
   }
 }
 
