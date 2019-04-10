@@ -571,7 +571,7 @@ public:
     if (!result.this_block)
       return true;
       
-    uint32_t    last_irreversoble_num = result.last_irreversible.block_num;
+    uint32_t    last_irreversible_num = result.last_irreversible.block_num;
 
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
@@ -590,7 +590,7 @@ public:
         db->set_revision(newrev);
       }
       
-      if( block_num > last_irreversoble_num ) {
+      if( block_num > last_irreversible_num ) {
         // we're at the blockchain head
         if (block_num <= head) { //received a block that is lower than what we already saw
           ilog("fork detected at block ${b}; head=${h}", ("b",block_num)("h",head));
