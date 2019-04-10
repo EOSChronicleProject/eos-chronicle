@@ -353,6 +353,7 @@ public:
       fe->fork_block_num = 0;
       fe->depth = 0;
       fe->fork_reason = chronicle::channels::fork_reason_val::resync;
+      fe->last_irreversible = 0;
       _forks_chan.publish(channel_priority, fe);
     }
 
@@ -362,6 +363,7 @@ public:
       fe->fork_block_num = head;
       fe->depth = depth;
       fe->fork_reason = chronicle::channels::fork_reason_val::restart;
+      fe->last_irreversible = irreversible;
       _forks_chan.publish(channel_priority, fe);
     }
     
@@ -612,6 +614,7 @@ public:
           fe->fork_block_num = block_num;
           fe->depth = depth;
           fe->fork_reason = chronicle::channels::fork_reason_val::network;
+          fe->last_irreversible = last_irreversible_num;
           _forks_chan.publish(channel_priority, fe);
         }
         else
@@ -639,7 +642,7 @@ public:
         
     head            = block_num;
     head_id         = block_id;
-    irreversible    = result.last_irreversible.block_num;
+    irreversible    = last_irreversible_num;
     irreversible_id = result.last_irreversible.block_id;
     
     if (result.block)

@@ -31,6 +31,7 @@ namespace chronicle {
       uint32_t         fork_block_num;
       uint32_t         depth;
       fork_reason_val  fork_reason;
+      uint32_t         last_irreversible;
     };
     
     template <typename F>
@@ -38,6 +39,7 @@ namespace chronicle {
       f("block_num", member_ptr<&fork_event::fork_block_num>{});
       f("depth", member_ptr<&fork_event::depth>{});
       f("fork_reason", member_ptr<&fork_event::fork_reason>{});
+      f("last_irreversible", member_ptr<&fork_event::last_irreversible>{});
     }
     
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
