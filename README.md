@@ -277,6 +277,7 @@ The following options are available from command-line only:
   name/path for library users. An example file that is only printing
   error messages is located in `examples/` folder.
 
+
 The following options are available from command line and `config.ini`:
 
 * `host = HOST` (=`localhost`): Host to connect to (nodeos with
@@ -306,6 +307,10 @@ The following options are available from command line and `config.ini`:
 
 * `skip-table-deltas = true|false` (=`false`) Disable table delta events
   in the export.
+
+* `irreversible-only = true|false` (=`false`) fetch irreversible blocks
+only
+
 
 Options for `exp_ws_plugin`:
 

@@ -74,6 +74,7 @@ namespace {
   const char* RCV_NOEXPORT_OPT = "noexport";
   const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
   const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
+  const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
 }
 
 
@@ -249,6 +250,7 @@ public:
   bool                                  noexport_mode;
   bool                                  skip_block_events;
   bool                                  skip_table_deltas;
+  bool                                  irreversible_only;
   
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
@@ -507,7 +509,7 @@ public:
                   {{"end_block_num"s}, {max_uint32_str}},
                     {{"max_messages_in_flight"s}, {max_uint32_str}},
                       {{"have_positions"s}, {positions}},
-                        {{"irreversible_only"s}, {false}},
+                        {{"irreversible_only"s}, {irreversible_only}},
                           {{"fetch_block"s}, {fetch_block}},
                             {{"fetch_traces"s}, {fetch_traces}},
                               {{"fetch_deltas"s}, {fetch_deltas}},
@@ -1073,6 +1075,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_NOEXPORT_OPT, bpo::value<bool>()->default_value(false), "Disable all export and scan for ABI updates only")
     (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
     (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
+    (RCV_IRREV_ONLY_OPT, bpo::value<bool>()->default_value(false), "Fetch only irreversible blocks")
     ;
 }
 
@@ -1121,6 +1124,10 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->skip_table_deltas = options.at(RCV_SKIP_DELTAS_OPT).as<bool>();
     if( my->skip_table_deltas )
       ilog("Skipping table delta events");
+
+    my->irreversible_only = options.at(RCV_IRREV_ONLY_OPT).as<bool>();
+    if( my->irreversible_only )
+      ilog("Fetching irreversible blocks only");
     
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
