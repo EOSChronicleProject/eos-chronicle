@@ -1,7 +1,7 @@
 # EOS Chronicle Project
 
 This project is an implementation of work proposal as published at
-https://github.com/cc32d9/eos-work-proposals/tree/master/001_EOS_History_Database
+https://github.com/cc32d9/eos-work-proposals/tree/master/001_EOS_Chronicle
 
 The goal is to build a scalable and reliable toolset for maintaining EOS
 blockchain history in a database.
