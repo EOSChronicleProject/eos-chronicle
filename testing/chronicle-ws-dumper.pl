@@ -66,17 +66,15 @@ Net::WebSocket::Server->new(
                     print $json->encode($data);
                     print "\n";
                     
-                    if( $msgtype == 1002 )
+                    if( $msgtype == 1001 or $msgtype == 1010 )
                     {
                         $last_block = $data->{'block_num'};
                     }
-                    
-                    if( ($msgtype == 1002 and $last_block - $last_ack >= $ack) or
-                        $msgtype == 1009 )
+
+                    if( (($msgtype == 1010 and $last_block - $last_ack >= $ack) or
+                         $msgtype == 1009) )
                     {
-                        $last_ack = $last_block - 1;
-                        $conn->send_binary(sprintf("%d", $last_ack));
-                        print STDERR "ack $last_ack\n";
+                        send_ack($conn);
                     }
                 }
                 else
@@ -91,17 +89,15 @@ Net::WebSocket::Server->new(
                     print $json->encode($data), "\n\n";
                     my $type = $data->{'msgtype'};
                     
-                    if( $type eq 'BLOCK' )
+                    if( $type eq 'FORK' or $type eq 'BLOCK_COMPLETED' )
                     {
                         $last_block = $data->{'data'}{'block_num'};
                     }
                     
-                    if( ($type eq 'BLOCK' and $last_block - $last_ack >= $ack) or
+                    if( ($type eq 'BLOCK_COMPLETED' and $last_block - $last_ack >= $ack) or
                         $type eq 'RCVR_PAUSE' )
                     {
-                        $last_ack = $last_block - 1;
-                        $conn->send_binary(sprintf("%d", $last_ack));
-                        print STDERR "ack $last_ack\n";
+                        send_ack($conn);
                     }
                 }
             },
@@ -115,5 +111,14 @@ Net::WebSocket::Server->new(
     )->start;
 
 
+
+    
+sub send_ack
+{
+    my $conn = shift;
+    $last_ack = $last_block;
+    $conn->send_binary(sprintf("%d", $last_ack));
+    print STDERR "ack $last_ack\n";
+}
 
     
