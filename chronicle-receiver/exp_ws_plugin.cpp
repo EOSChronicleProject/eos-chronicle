@@ -218,8 +218,10 @@ public:
            else {
              const auto in_data = in_buffer->data();
              uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
-             if( ack > UINT32_MAX )
+             if( ack > UINT32_MAX ) {
+               elog("Wrong data in acknowledgement: ${s}", ("s",string((const char*)in_data.data(), in_data.size())));
                throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
+             }
              ack_block(ack);
              if( ack - prev_ack_reported > 10000 ) {
                ilog("exp_ws_plugin queue_size=${q}", ("q",async_queue.size()));
@@ -242,8 +244,10 @@ public:
            else {
              const auto in_data = in_buffer->data();
              uint64_t block_req = std::stoul(string((const char*)in_data.data(), in_data.size()));
-             if( block_req > UINT32_MAX )
+             if( block_req > UINT32_MAX ) {
+               elog("Wrong data in interactive request: ${s}", ("s",string((const char*)in_data.data(), in_data.size())));
                throw std::runtime_error("Requested block number higher than UINT32_MAX");
+             }
              _interactive_requests_chan.publish(ws_priority, block_req);
              async_read_interactive_reqs();
            }
