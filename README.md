@@ -311,6 +311,8 @@ The following options are available from command line and `config.ini`:
 * `irreversible-only = true|false` (=`false`) fetch irreversible blocks
 only
 
+* `end-block = N` (=`4294967295`)  Stop receiver before this block number
+
 
 Options for `exp_ws_plugin`:
 
@@ -367,6 +369,10 @@ those changes.
   contract. This is used in interactive mode.
 
 * Added interactive mode
+
+* Added irreversible-only and end-block options
+
+
 
 
 

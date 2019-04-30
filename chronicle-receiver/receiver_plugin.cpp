@@ -28,6 +28,7 @@
 #include <fc/log/logger.hpp>
 #include <fc/exception/exception.hpp>
 #include <queue>
+#include <limits>
 
 using namespace abieos;
 using namespace appbase;
@@ -60,8 +61,7 @@ using asio::ip::tcp;
 using boost::beast::flat_buffer;
 using boost::system::error_code;
 
-const uint32_t max_uint32 = 0xFFFFFFFF;
-const string max_uint32_str = to_string(max_uint32);
+const string max_uint32_str = to_string(std::numeric_limits<uint32_t>::max());
 
 
 namespace {
@@ -75,6 +75,7 @@ namespace {
   const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
   const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
   const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
+  const char* RCV_END_BLOCK_OPT = "end-block";
 }
 
 
@@ -83,7 +84,7 @@ namespace {
 namespace chronicle {
   using namespace chainbase;
   using namespace boost::multi_index;
-  
+
   enum dbtables {
     state_table,
     received_blocks_table,
@@ -96,9 +97,9 @@ namespace chronicle {
   struct by_name;
   struct by_name_and_block;
   struct by_name_and_block_rev;
-  
+
   // this is a singleton keeping the state of the receiver
-  
+
   struct state_object : public chainbase::object<state_table, state_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(state_object);
     id_type     id;
@@ -107,19 +108,19 @@ namespace chronicle {
     uint32_t    irreversible;
     checksum256 irreversible_id;
   };
-  
+
   using state_index = chainbase::shared_multi_index_container<
     state_object,
     indexed_by<
       ordered_unique<tag<by_id>, member<state_object, state_object::id_type, &state_object::id>>>>;
 
   // list of received blocks and their IDs, truncated from head as new blocks are received
-  
+
   struct received_block_object : public chainbase::object<received_blocks_table, received_block_object>  {
     CHAINBASE_DEFAULT_CONSTRUCTOR(received_block_object);
     id_type      id;
     uint32_t     block_index;
-    checksum256  block_id;    
+    checksum256  block_id;
   };
 
   using received_block_index = chainbase::shared_multi_index_container<
@@ -168,7 +169,7 @@ namespace chronicle {
     }
   };
 
-  // History is 
+  // History is
   using contract_abi_hist_index = chainbase::shared_multi_index_container<
     contract_abi_history,
     indexed_by<
@@ -229,7 +230,7 @@ public:
     _block_completed_chan(app().get_channel<chronicle::channels::block_completed>()),
     mytimer(std::ref(app().get_io_service()))
   {};
-  
+
   shared_ptr<chainbase::database>       db;
   shared_ptr<tcp::resolver>             resolver;
   shared_ptr<websocket::stream<tcp::socket>> stream;
@@ -243,22 +244,24 @@ public:
   bool                                  receiver_ready = false;
 
   bool                                  interactive_mode;
-  chronicle::channels::interactive_requests::channel_type::handle _interactive_requests_subscription;  
+  chronicle::channels::interactive_requests::channel_type::handle _interactive_requests_subscription;
   std::queue<uint32_t>                  interactive_req_queue;
   bool                                  interactive_req_pending = false;
-  
+
   bool                                  noexport_mode;
   bool                                  skip_block_events;
   bool                                  skip_table_deltas;
   bool                                  irreversible_only;
-  
+  uint32_t                              end_block_num;
+
+
   uint32_t                              head            = 0;
   checksum256                           head_id         = {};
   uint32_t                              irreversible    = 0;
   checksum256                           irreversible_id = {};
   uint32_t                              first_bulk      = 0;
   abieos::block_timestamp               block_timestamp;
-  
+
   // needed for decoding state history input
   map<string, abi_type>                 abi_types;
 
@@ -288,7 +291,7 @@ public:
   uint32_t                              pause_time_msec = 0;
   bool                                  slowdown_requested = false;
 
-  
+
   void init() {
     if (interactive_mode) {
       _interactive_requests_subscription =
@@ -296,8 +299,8 @@ public:
         ([this](uint32_t block_req){ on_block_req(block_req); });
     }
   }
-  
-  
+
+
   void start() {
     if (!interactive_mode)
       load_state();
@@ -306,7 +309,7 @@ public:
        [this](const error_code ec, tcp::resolver::results_type results) {
         if (ec)
           elog("Error during lookup of ${h}:${p} - ${e}", ("h",host)("p",port)("e", ec.message()));
-        
+
         callback(ec, "resolve", [&] {
             asio::async_connect
               (
@@ -326,7 +329,7 @@ public:
       });
   }
 
-  
+
   void load_state() {
     bool did_undo = false;
     uint32_t depth;
@@ -368,15 +371,20 @@ public:
       fe->last_irreversible = irreversible;
       _forks_chan.publish(channel_priority, fe);
     }
-    
+
     if( exporter_will_ack )
       exporter_acked_block = head;
+
+    if( head >= end_block_num ) {
+      elog("Head (${h}) is already at or past end block number (${e})", ("h",head)("e",end_block_num));
+      throw runtime_error("Head is already at or past end block number");
+    }
 
     init_contract_abi_ctxt();
   }
 
-  
-  
+
+
   void save_state() {
     const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
@@ -397,8 +405,8 @@ public:
         });
     }
   }
-  
-  
+
+
   void start_read() {
     auto in_buffer = make_shared<flat_buffer>();
     stream->async_read
@@ -417,9 +425,9 @@ public:
          }));
   }
 
-  
+
   void continue_read() {
-    if( check_pause() ) {
+    if (check_pause()) {
       pause_time_msec = 0;
       auto in_buffer = make_shared<flat_buffer>();
       stream->async_read
@@ -434,15 +442,24 @@ public:
     }
   }
 
-  
+
   // if consumer fails to acknowledge on time, or processing queues get too big, we pacify the receiver
   bool check_pause() {
-    if( slowdown_requested || 
+    if (slowdown_requested ||
         (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ||
-        app().get_priority_queue().size() > max_queue_size ) {
-      
+        app().get_priority_queue().size() > max_queue_size ||
+        head == end_block_num -1) {
+
       slowdown_requested = false;
-      
+
+      if ( head == end_block_num -1 && irreversible >= head &&
+           (!exporter_will_ack || exporter_acked_block == head) ) {
+        ilog("Reached the end block ${b}. Stopping the receiver.", ("b", head));
+        commit_db();
+        abort_receiver();
+        return false;
+      }
+
       if( pause_time_msec == 0 ) {
         pause_time_msec = 100;
       }
@@ -457,7 +474,7 @@ public:
         _receiver_pauses_chan.publish(channel_priority, rp);
         ilog("Pausing the reader");
       }
-      
+
       mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
       mytimer.async_wait
         (app().get_priority_queue().wrap(stream_priority, [this](const error_code ec) {
@@ -469,7 +486,7 @@ public:
     }
     return true;
   }
-    
+
   void receive_abi(const shared_ptr<flat_buffer>& p) {
     auto data = p->data();
     std::string error;
@@ -484,7 +501,7 @@ public:
     abi_types = std::move(c.abi_types);
   }
 
-  
+
   void request_blocks() {
     jarray positions;
     const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
@@ -506,7 +523,7 @@ public:
     send_request(jvalue{jarray{{"get_blocks_request_v0"s},
             {jobject{
                 {{"start_block_num"s}, {to_string(start_block)}},
-                  {{"end_block_num"s}, {max_uint32_str}},
+                  {{"end_block_num"s}, {to_string(end_block_num)}},
                     {{"max_messages_in_flight"s}, {max_uint32_str}},
                       {{"have_positions"s}, {positions}},
                         {{"irreversible_only"s}, {irreversible_only}},
@@ -534,7 +551,7 @@ public:
     process_interactive_reqs();
   }
 
-  
+
   void process_interactive_reqs() {
     if (receiver_ready && !interactive_req_pending && interactive_req_queue.size() > 0 ) {
       uint32_t block_req = interactive_req_queue.front();
@@ -560,8 +577,8 @@ public:
         [&]() {} );
     }
   }
-    
-  
+
+
   bool receive_result(const shared_ptr<flat_buffer>& p) {
     auto         data = p->data();
     input_buffer bin{(const char*)data.data(), (const char*)data.data() + data.size()};
@@ -574,12 +591,12 @@ public:
 
     if (!result.this_block)
       return true;
-      
+
     uint32_t    last_irreversible_num = result.last_irreversible.block_num;
 
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
-    
+
     if (interactive_mode) {
       dlog("received result for block ${b}", ("b", block_num));
       interactive_req_pending = false;
@@ -593,7 +610,7 @@ public:
         dlog("Acknowledged: ${a}", ("a",exporter_acked_block));
         db->set_revision(newrev);
       }
-      
+
       if( block_num > last_irreversible_num ) {
         // we're at the blockchain head
         if (block_num <= head) { //received a block that is lower than what we already saw
@@ -624,7 +641,7 @@ public:
             throw runtime_error("prev_block does not match");
       }
     }
-    
+
     auto undo_session = db->start_undo_session( !interactive_mode );
 
     if (!interactive_mode && block_num > irreversible ) {
@@ -641,12 +658,12 @@ public:
         itr = idx.begin();
       }
     }
-        
+
     head            = block_num;
     head_id         = block_id;
     irreversible    = last_irreversible_num;
     irreversible_id = result.last_irreversible.block_id;
-    
+
     if (result.block)
       receive_block(*result.block);
     if (result.deltas)
@@ -658,21 +675,18 @@ public:
     bf->block_num = head;
     bf->last_irreversible = irreversible;
     _block_completed_chan.publish(channel_priority, bf);
-    
+
     if( aborting )
       return false;
-    
+
     if (!interactive_mode) {
       save_state();
       undo_session.push();     // save a new revision
+      commit_db();
 
-      // if exporter is acknowledging, we only commit what is confirmed
-      auto commit_rev = irreversible;
-      if( exporter_will_ack && exporter_acked_block < commit_rev ) {
-        commit_rev = exporter_acked_block;
-      }
-      db->commit(commit_rev);
-    
+      if (head == end_block_num-1)
+        ilog("Received last block before the end. Waiting for acknowledgement");
+
       if (report_every > 0 && head % report_every == 0) {
         uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
         uint64_t size = db->get_segment_manager()->get_size();
@@ -684,12 +698,21 @@ public:
         ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
       }
     }
-    
+
     return true;
   }
 
-  
-  
+
+  void commit_db() {
+    // if exporter is acknowledging, we only commit what is confirmed
+    auto commit_rev = irreversible;
+    if( exporter_will_ack && exporter_acked_block < commit_rev ) {
+      commit_rev = exporter_acked_block;
+    }
+    db->commit(commit_rev);
+  }
+
+
   void receive_block(input_buffer bin) {
     if (head == irreversible) {
       ilog("Crossing irreversible block=${h}", ("h",head));
@@ -709,25 +732,25 @@ public:
   }
 
 
-  
+
   void receive_deltas(input_buffer buf) {
     auto         data = zlib_decompress(buf);
     input_buffer bin{data.data(), data.data() + data.size()};
-    
+
     uint32_t num;
     string error;
     if( !read_varuint32(bin, error, num) )
       throw runtime_error(error);
     for (uint32_t i = 0; i < num; ++i) {
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
-      
+
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
       bltd->block_timestamp = block_timestamp;
 
       string error;
       if (!bin_to_native(bltd->table_delta, error, bin))
         throw runtime_error("table_delta conversion error: " + error);
-      
+
       auto& variant_type = get_type(bltd->table_delta.name);
       if (!variant_type.filled_variant || variant_type.fields.size() != 1 || !variant_type.fields[0].type->filled_struct)
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
@@ -755,7 +778,7 @@ public:
         }
       }
       else if (!noexport_mode && !skip_table_deltas) {
-        if (bltd->table_delta.name == "contract_row" && 
+        if (bltd->table_delta.name == "contract_row" &&
             (_table_row_updates_chan.has_subscribers() || _abi_errors_chan.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
@@ -794,7 +817,7 @@ public:
     contract_abi_ctxt = abieos_create();
   }
 
-  
+
   void clear_contract_abi(name account) {
     if( contract_abi_imported.count(account.value) > 0 )
       init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
@@ -803,7 +826,7 @@ public:
     if( itr != idx.end() ) {
       // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
       db->remove(*itr);
-      
+
       auto ar =  std::make_shared<chronicle::channels::abi_removal>();
       ar->block_num = head;
       ar->block_timestamp = block_timestamp;
@@ -814,7 +837,7 @@ public:
   }
 
 
-  
+
   void save_contract_abi(name account, std::vector<char> data) {
     // dlog("Saving contract ABI for ${a}", ("a",(std::string)account));
     if( contract_abi_imported.count(account.value) > 0 ) {
@@ -825,9 +848,9 @@ public:
       // this checks the validity of ABI
       if( !abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size()) ) {
         throw runtime_error( abieos_get_error(contract_abi_ctxt) );
-      }        
+      }
       contract_abi_imported.insert(account.value);
-      
+
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
       auto itr = idx.find(account.value);
       if( itr != idx.end() ) {
@@ -901,8 +924,8 @@ public:
     }
     */
   }
-  
-  
+
+
   bool get_contract_abi_ready(name account) {
     if( contract_abi_imported.count(account.value) > 0 )
       return true; // the context has this contract loaded
@@ -929,8 +952,8 @@ public:
     }
     return false;
   }
-  
-  
+
+
   void receive_traces(input_buffer buf) {
     if (_transaction_traces_chan.has_subscribers()) {
       auto         data = zlib_decompress(buf);
@@ -939,7 +962,7 @@ public:
       string       error;
       if( !read_varuint32(bin, error, num) )
         throw runtime_error(error);
-      for (uint32_t i = 0; i < num; ++i) {        
+      for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
         if (!bin_to_native(tr->trace, error, bin))
           throw runtime_error("transaction_trace conversion error: " + error);
@@ -978,13 +1001,13 @@ public:
     auto bin = make_shared<vector<char>>();
     if (!json_to_bin(*bin, error, &get_type("request"), value))
       throw runtime_error("failed to convert during send_request: " + error);
-    
+
     stream->async_write(asio::buffer(*bin),
                         [bin, this, f](const error_code ec, size_t) {
                           callback(ec, "async_write", f); });
   }
 
-  
+
   void check_variant(input_buffer& bin, const abi_type& type, uint32_t expected) {
     string error;
     uint32_t index;
@@ -998,7 +1021,7 @@ public:
       throw runtime_error("expected "s + type.fields[expected].name + " got " + type.fields[index].name);
   }
 
-  
+
   void check_variant(input_buffer& bin, const abi_type& type, const char* expected) {
     string error;
     uint32_t index;
@@ -1012,7 +1035,7 @@ public:
       throw runtime_error("expected "s + expected + " got " + type.fields[index].name);
   }
 
-  
+
   template <typename F>
   void catch_and_close(F f) {
     try {
@@ -1026,7 +1049,7 @@ public:
     }
   }
 
-  
+
   template <typename F>
   void callback(const error_code ec, const char* what, F f) {
     if (ec)
@@ -1076,12 +1099,14 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
     (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
     (RCV_IRREV_ONLY_OPT, bpo::value<bool>()->default_value(false), "Fetch only irreversible blocks")
+    (RCV_END_BLOCK_OPT, bpo::value<uint32_t>()->default_value(std::numeric_limits<uint32_t>::max()),
+     "Stop receiver before this block number")
     ;
 }
 
-  
+
 void receiver_plugin::plugin_initialize( const variables_map& options ) {
-  try {    
+  try {
     if( !options.count("data-dir") ) {
       throw std::runtime_error("--data-dir option is required");
     }
@@ -1090,7 +1115,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->interactive_mode = options.at(RCV_INTERACTIVE_OPT).as<bool>();
     if( my->noexport_mode && my->interactive_mode )
       throw std::runtime_error("interactive and noexport options cannot be true at the same time");
-    
+
     string dbdir = app().data_dir().native() + "/receiver-state";
     if (my->interactive_mode) {
       my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
@@ -1100,18 +1125,18 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
         (dbdir, chainbase::database::read_write,
          options.at(RCV_DBSIZE_OPT).as<uint32_t>() * 1024*1024);
     }
-    
+
     my->db->add_index<chronicle::state_index>();
     my->db->add_index<chronicle::received_block_index>();
     my->db->add_index<chronicle::contract_abi_index>();
     my->db->add_index<chronicle::contract_abi_hist_index>();
-    
+
     my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
-    
+
     my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
     my->stream->binary(true);
     my->stream->read_message_max(1024 * 1024 * 1024);
-    
+
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();
     my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
@@ -1128,7 +1153,9 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->irreversible_only = options.at(RCV_IRREV_ONLY_OPT).as<bool>();
     if( my->irreversible_only )
       ilog("Fetching irreversible blocks only");
-    
+
+    my->end_block_num = options.at(RCV_END_BLOCK_OPT).as<uint32_t>();
+
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
                       std::set<abieos::name>{abieos::name("onblock")} ));
@@ -1155,7 +1182,7 @@ void receiver_plugin::start_after_dependencies() {
       mustwait = true;
     }
   }
-  
+
   if( mustwait ) {
     ilog("Waiting for dependent plugins");
     my->mytimer.expires_from_now(boost::posix_time::milliseconds(50));
@@ -1191,9 +1218,9 @@ bool receiver_plugin::is_noexport() {
 void receiver_plugin::exporter_will_ack_blocks(uint32_t max_unconfirmed) {
   assert(!my->exporter_will_ack);
   assert(max_unconfirmed > 0);
-  if (my->interactive_mode) 
+  if (my->interactive_mode)
     throw runtime_error("Exporter must not acknowledge blocks in interactive mode");
-  if (my->noexport_mode) 
+  if (my->noexport_mode)
     throw runtime_error("Exporter must not acknowledge blocks in noexport mode");
   my->exporter_will_ack = true;
   my->exporter_max_unconfirmed = max_unconfirmed;
@@ -1241,7 +1268,7 @@ bool is_noexport_opt(const variables_map& options)
 {
   return options.at(RCV_NOEXPORT_OPT).as<bool>();
 }
-  
+
 
 static bool have_exporter = false;
 
@@ -1262,10 +1289,8 @@ void exporter_will_ack_blocks(uint32_t max_unconfirmed)
 void donot_start_receiver_before(appbase::abstract_plugin* plug, string plugname) {
   receiver_plug->add_dependency(plug, plugname);
 }
-  
+
 void abort_receiver() {
   receiver_plug->abort_receiver();
   app().quit();
 }
-
-
