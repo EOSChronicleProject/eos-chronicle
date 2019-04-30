@@ -9,6 +9,7 @@
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/core.hpp>
 #include <stdexcept>
+#include <limits>
 	
 #include "rapidjson/reader.h"
 #include "rapidjson/stringbuffer.h"
@@ -218,7 +219,7 @@ public:
            else {
              const auto in_data = in_buffer->data();
              uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
-             if( ack > UINT32_MAX ) {
+             if( ack > std::numeric_limits<uint32_t>::max() ) {
                elog("Wrong data in acknowledgement: ${s}", ("s",string((const char*)in_data.data(), in_data.size())));
                throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
              }
@@ -244,7 +245,7 @@ public:
            else {
              const auto in_data = in_buffer->data();
              uint64_t block_req = std::stoul(string((const char*)in_data.data(), in_data.size()));
-             if( block_req > UINT32_MAX ) {
+             if( block_req > std::numeric_limits<uint32_t>::max() ) {
                elog("Wrong data in interactive request: ${s}", ("s",string((const char*)in_data.data(), in_data.size())));
                throw std::runtime_error("Requested block number higher than UINT32_MAX");
              }
