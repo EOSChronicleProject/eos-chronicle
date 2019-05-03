@@ -148,11 +148,14 @@ message.
 
 # Compiling
 
-Minimum requirements: Ubuntu 18.10, 3GB RAM.
+Minimum requirements: Boost libraries version 1.67 or higher.
 
-Earlier versions of Ubuntu have Boost library of incompatible versions,
-but it's possible to compile them from sources. Less than 3GB RAM will
-cause significant swapping during the compilation.
+3GB RAM is required for sucessful compilation. Smaller RAM will cause
+heavy swapping during the compilation.
+
+Ubuntu 18.10 delivers Boost 1.67 in binary packages. Earlier versions of
+Ubuntu will require manual compilation of Boost.
+
 
 
 ```
