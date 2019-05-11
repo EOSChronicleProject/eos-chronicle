@@ -37,7 +37,7 @@ confirms the blocks within this maximum. Received and decoded data is
 kept in a queue that is fed to the consumer, allowing it to process the
 data at its own pace. If the number of unacknowledged blocks reaches the
 maxumum, the reader pauses itself with an increasing timer, varying from
-0.1 to 8 seconds. If the pause exceeds 2 seconds, an informational event
+0.1 to 8 seconds. If the pause exceeds 1 second, an informational event
 is generated.
 
 If `nodeos` stops or restarts, `chronicle-receiver` will automatically

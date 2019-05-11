@@ -470,7 +470,7 @@ public:
         pause_time_msec *= 2;
       }
 
-      if( pause_time_msec >= 2000 ) {
+      if( pause_time_msec >= 1000 ) {
         auto rp = std::make_shared<chronicle::channels::receiver_pause>();
         rp->head = head;
         rp->acknowledged = exporter_acked_block;
