@@ -1283,6 +1283,9 @@ void receiver_plugin::abort_receiver() {
 
 bool is_noexport_opt(const variables_map& options)
 {
+  if( !options.count(RCV_MODE_OPT) ) {
+    throw std::runtime_error("mode option is required");
+  }
   return (options.at(RCV_MODE_OPT).as<string>() == RCV_MODE_SCAN_NOEXP);
 }
 
