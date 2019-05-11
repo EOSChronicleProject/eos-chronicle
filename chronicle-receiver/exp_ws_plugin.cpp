@@ -243,13 +243,23 @@ public:
              close_ws(boost::beast::websocket::close_code::unknown_data);
            }
            else {
+             auto req = std::make_shared<chronicle::channels::interactive_request>();
              const auto in_data = in_buffer->data();
-             uint64_t block_req = std::stoul(string((const char*)in_data.data(), in_data.size()));
-             if( block_req > std::numeric_limits<uint32_t>::max() ) {
-               elog("Wrong data in interactive request: ${s}", ("s",string((const char*)in_data.data(), in_data.size())));
-               throw std::runtime_error("Requested block number higher than UINT32_MAX");
+             string reqstr((const char*)in_data.data(), in_data.size());
+             auto pos = reqstr.find('-');
+             if (pos == string::npos) {
+               req->block_num_start = std::stoul(reqstr);
+               req->block_num_end = req->block_num_start+1;
+             } else {
+               req->block_num_start = std::stoul(string(reqstr, 0, pos));
+               req->block_num_end = std::stoul(string(reqstr, pos+1));
              }
-             _interactive_requests_chan.publish(ws_priority, block_req);
+             if (req->block_num_end <= req->block_num_start) {
+               elog("Wrong interactive request: start=${s}, end=${e}", ("s",req->block_num_start)("e",req->block_num_end));
+               throw std::runtime_error("End block in interactive request not higher than start block");
+             }
+             ilog("Interactive request: start=${s}, end=${e}", ("s",req->block_num_start)("e",req->block_num_end));
+             _interactive_requests_chan.publish(ws_priority, req);
              async_read_interactive_reqs();
            }
          }));

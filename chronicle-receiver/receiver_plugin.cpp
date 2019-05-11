@@ -247,8 +247,8 @@ public:
   bool                                  receiver_ready = false;
 
   bool                                  interactive_mode;
-  chronicle::channels::interactive_requests::channel_type::handle _interactive_requests_subscription;
-  std::queue<uint32_t>                  interactive_req_queue;
+  chronicle::channels::interactive_requests::channel_type::handle          _interactive_requests_subscription;
+  std::queue<std::shared_ptr<chronicle::channels::interactive_request>>    interactive_req_queue;
   bool                                  interactive_req_pending = false;
 
   bool                                  noexport_mode;
@@ -299,7 +299,7 @@ public:
     if (interactive_mode) {
       _interactive_requests_subscription =
         app().get_channel<chronicle::channels::interactive_requests>().subscribe
-        ([this](uint32_t block_req){ on_block_req(block_req); });
+        ([this](std::shared_ptr<chronicle::channels::interactive_request> req){ on_block_req(req); });
     }
   }
 
@@ -451,7 +451,7 @@ public:
     if (slowdown_requested ||
         (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ||
         app().get_priority_queue().size() > max_queue_size ||
-        head == end_block_num -1) {
+        (!interactive_mode && head == end_block_num -1)) {
 
       slowdown_requested = false;
 
@@ -538,30 +538,37 @@ public:
   }
 
 
-  void on_block_req(uint32_t block_req) {
+  void on_block_req(std::shared_ptr<chronicle::channels::interactive_request> req) {
     const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
     if( itr == idx.end() ) {
       elog("Receiver did not process any blocks yet");
       return;
     }
-    if( block_req > itr->head ) {
-      elog("Requested block ${b} is higher than current head ${h}", ("b",block_req)("h", itr->head));
+    if( req->block_num_start > itr->head ) {
+      elog("Requested start block ${b} is higher than current head ${h}",
+           ("b",req->block_num_start)("h", itr->head));
       return;
     }
-    dlog("block ${b} requested, inserting in the queue", ("b", block_req));
-    interactive_req_queue.push(block_req);
+    if( req->block_num_end > itr->head ) {
+      elog("Requested end block ${b} is higher than current head ${h}",
+           ("b",req->block_num_end)("h", itr->head));
+      return;
+    }
+    interactive_req_queue.push(req);
     process_interactive_reqs();
   }
 
 
   void process_interactive_reqs() {
     if (receiver_ready && !interactive_req_pending && interactive_req_queue.size() > 0 ) {
-      uint32_t block_req = interactive_req_queue.front();
+      auto req = interactive_req_queue.front();
       interactive_req_queue.pop();
-      string block_req_str = to_string(block_req);
-      string end_block_str = to_string(block_req+1);
-      dlog("requesting block ${b}", ("b", block_req_str));
+      string block_req_str = to_string(req->block_num_start);
+      string end_block_str = to_string(req->block_num_end);
+      end_block_num = req->block_num_end;
+      init_contract_abi_ctxt();
+      dlog("Requesting blocks ${s} to ${e}", ("s", block_req_str)("e",end_block_str));
       bool fetch_block = true;
       bool fetch_traces = true;
       bool fetch_deltas = skip_table_deltas ? false:true;
@@ -601,10 +608,10 @@ public:
     checksum256 block_id = result.this_block->block_id;
 
     if (interactive_mode) {
-      dlog("received result for block ${b}", ("b", block_num));
-      interactive_req_pending = false;
-      process_interactive_reqs();
-      init_contract_abi_ctxt();
+      if( block_num == end_block_num-1 ) {
+        interactive_req_pending = false;
+        process_interactive_reqs();
+      }      
     }
     else {
       if( db->revision() < block_num-1 ) {
@@ -1120,6 +1127,8 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       throw std::runtime_error("mode option is required");
     }
 
+    my->irreversible_only = options.at(RCV_IRREV_ONLY_OPT).as<bool>();
+
     string receiver_mode = options.at(RCV_MODE_OPT).as<string>();
     if (receiver_mode == RCV_MODE_SCAN) {
       my->noexport_mode = false;
@@ -1132,7 +1141,10 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     else if (receiver_mode == RCV_MODE_INTERACTIVE) {
       my->noexport_mode = false;
       my->interactive_mode = true;
+      my->irreversible_only = true;
     }    
+
+    ilog("Starting in ${m} mode", ("m", receiver_mode));
       
     string dbdir = app().data_dir().native() + "/receiver-state";
     if (my->interactive_mode) {
@@ -1168,7 +1180,6 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     if( my->skip_table_deltas )
       ilog("Skipping table delta events");
 
-    my->irreversible_only = options.at(RCV_IRREV_ONLY_OPT).as<bool>();
     if( my->irreversible_only )
       ilog("Fetching irreversible blocks only");
 

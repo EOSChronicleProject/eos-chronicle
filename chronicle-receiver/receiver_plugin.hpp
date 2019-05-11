@@ -183,8 +183,13 @@ namespace chronicle {
     }
 
     using block_completed = channel_decl<struct block_completed_tag, std::shared_ptr<block_finished>>;
+
+    struct interactive_request {
+      uint32_t                        block_num_start;
+      uint32_t                        block_num_end;
+    };
     
-    using interactive_requests = channel_decl<struct interactive_requests_tag, uint32_t>;
+    using interactive_requests = channel_decl<struct interactive_requests_tag, std::shared_ptr<interactive_request>>;
   }
 }
   

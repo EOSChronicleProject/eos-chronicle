@@ -30,7 +30,7 @@ my $ok = GetOptions
 
 if( not $ok or scalar(@ARGV) == 0 )
 {
-    print STDERR "Usage: $0 [options...] BLCK1 [BLCK2 ...]\n",
+    print STDERR "Usage: $0 [options...] BLCK1 [BLCK2-BLCK3 ...]\n",
     "Options:\n",
     "  --port=N        \[$port\] TCP port to listen to websocket connection\n",
     "  --bin           --exp-ws-bin-header is used in exporter\n";
@@ -39,9 +39,9 @@ if( not $ok or scalar(@ARGV) == 0 )
 
 foreach my $blk (@ARGV)
 {
-    if( $blk !~ /^\d+$/ )
+    if( $blk !~ /^\d+(-\d+)?$/ )
     {
-        print STDERR "$blk is not a valid block number\n";
+        print STDERR "$blk is not a valid block number or range\n";
         exit 1;
     }
     push(@blocks, $blk);
@@ -66,8 +66,18 @@ Net::WebSocket::Server->new(
                 my ($conn) = @_;
                 foreach my $blk (@blocks)
                 {
-                    $blocks_requested{$blk} = 1;
-                    $conn->send_binary(sprintf("%d", $blk));
+                    if( $blk =~ /^(\d+)-(\d+)$/ )
+                    {
+                        foreach my $num ($1 .. ($2-1))
+                        {
+                            $blocks_requested{$num} = 1;
+                        }
+                    }
+                    else
+                    {
+                        $blocks_requested{$blk} = 1;
+                    }
+                    $conn->send_binary($blk);
                 }
             },
             'binary' => sub {

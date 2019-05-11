@@ -84,8 +84,9 @@ mode. Only one process is allowed to run in scanning mode, and multiple
 processes can be started in interactive mode.
 
 The exporter plugin, or probably some other plugin, receives a request
-for particular block number. This request is passed to the receiver and
-requested from `state_history_plugin`.
+for particular block number or a range of blocks. This request is passed
+to the receiver and requested from `state_history_plugin`. If a range is
+specified, blocks up to the last before the end block are exported.
 
 During request processing, the decoder retrieves required contract ABI
 from its ABI history, so that it's the latest copy from a block number
@@ -95,6 +96,8 @@ Then, the same way as in scanning mode, decoded data is translated into
 JSON and passed to the exporter plugin.
 
 Receiver does not expect any acknowledgements in interactive mode.
+
+Only irreversoble blocks are available for interactive mode.
 
 Note that in case of `exp_ws_plugin`, you need to specify a different
 TCP port of the websocket server, so that it does not interfere with the
@@ -146,9 +149,14 @@ options, is currently always zero.
 The binary header mode increases the exporter performance by
 approximately 15%.
 
-The exporter expects that the server sends back block number
-acknowledgements in text format, each number in an individual binary
-message.
+In scanning mode, the exporter expects that the server sends back block
+number acknowledgements in text format, each number in an individual
+binary message.
+
+In interactive mode, the exporter expects that the server sends each
+request as a single binary message. The content of each message is
+either one block number in decimal text notation, or two decimal
+integers separated by minus sign (-) indicating a range of blocks.
 
 
 # Compiling
@@ -306,7 +314,7 @@ The following options are available from command line and `config.ini`:
     interactive access can fetch required blocks.
 
   * `interactive`: interactove mode allows the consumer request random
-    blocks.
+    blocks. Irreversible-only mode is automatically set in this mode.
 
 * `report-every = N` (=`10000`) Print informational messages every so
   many blocks;
