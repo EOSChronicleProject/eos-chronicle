@@ -68,14 +68,17 @@ namespace {
   const char* RCV_HOST_OPT = "host";
   const char* RCV_PORT_OPT = "port";
   const char* RCV_DBSIZE_OPT = "receiver-state-db-size";
+  const char* RCV_MODE_OPT = "mode";
   const char* RCV_EVERY_OPT = "report-every";
   const char* RCV_MAX_QUEUE_OPT = "max-queue-size";
-  const char* RCV_INTERACTIVE_OPT = "interactive";
-  const char* RCV_NOEXPORT_OPT = "noexport";
   const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
   const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
   const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
   const char* RCV_END_BLOCK_OPT = "end-block";
+
+  const char* RCV_MODE_SCAN = "scan";
+  const char* RCV_MODE_SCAN_NOEXP = "scan-noexport";
+  const char* RCV_MODE_INTERACTIVE = "interactive";
 }
 
 
@@ -1092,10 +1095,12 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_HOST_OPT, bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)")
     (RCV_PORT_OPT, bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
     (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(1024), "database size in MB")
+    (RCV_MODE_OPT, bpo::value<string>(), "Receiver mode. Values:\n"
+     " scan:          \tread blocks sequentially and export\n"
+     " scan-noexport: \tread blocks sequentially without export\n"
+     " interactive:   \trandom access\n")
     (RCV_EVERY_OPT, bpo::value<uint32_t>()->default_value(10000), "Report current state every N blocks")
     (RCV_MAX_QUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Maximum size of appbase priority queue")
-    (RCV_INTERACTIVE_OPT, bpo::value<bool>()->default_value(false), "Start in interactive read-only mode")
-    (RCV_NOEXPORT_OPT, bpo::value<bool>()->default_value(false), "Disable all export and scan for ABI updates only")
     (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
     (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
     (RCV_IRREV_ONLY_OPT, bpo::value<bool>()->default_value(false), "Fetch only irreversible blocks")
@@ -1111,11 +1116,24 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       throw std::runtime_error("--data-dir option is required");
     }
 
-    my->noexport_mode = is_noexport_opt(options);
-    my->interactive_mode = options.at(RCV_INTERACTIVE_OPT).as<bool>();
-    if( my->noexport_mode && my->interactive_mode )
-      throw std::runtime_error("interactive and noexport options cannot be true at the same time");
+    if( !options.count(RCV_MODE_OPT) ) {
+      throw std::runtime_error("mode option is required");
+    }
 
+    string receiver_mode = options.at(RCV_MODE_OPT).as<string>();
+    if (receiver_mode == RCV_MODE_SCAN) {
+      my->noexport_mode = false;
+      my->interactive_mode = false;
+    }
+    else if (receiver_mode == RCV_MODE_SCAN_NOEXP) {
+      my->noexport_mode = true;
+      my->interactive_mode = false;
+    }
+    else if (receiver_mode == RCV_MODE_INTERACTIVE) {
+      my->noexport_mode = false;
+      my->interactive_mode = true;
+    }    
+      
     string dbdir = app().data_dir().native() + "/receiver-state";
     if (my->interactive_mode) {
       my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
@@ -1263,10 +1281,9 @@ void receiver_plugin::abort_receiver() {
 }
 
 
-
 bool is_noexport_opt(const variables_map& options)
 {
-  return options.at(RCV_NOEXPORT_OPT).as<bool>();
+  return (options.at(RCV_MODE_OPT).as<string>() == RCV_MODE_SCAN_NOEXP);
 }
 
 

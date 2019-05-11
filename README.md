@@ -46,10 +46,10 @@ connection closes, the receiver will stop itself and close the
 connection to `nodeos`.
 
 
-## Streaming mode
+## Scanning mode
 
-By default `chronicle-receiver` starts in streaming mode, and operates
-as follows:
+When `mode` option is set to `scan`, `chronicle-receiver` operates as
+follows:
 
 * it reads all available blocks sequentially from state history.
 
@@ -71,29 +71,34 @@ as follows:
   block numbers.
 
 
+In `scan-noexport` mode, the receiver requestts the blocks from state
+history sequentially and stores all revisions of contract ABI in its
+memory. This allows it to be quickly available for interactive mode.
+
+
 ## Interactive mode
 
-In interactive mode, `chronicle-receiver` uses the state database
-populated by another receiver process that is running in streaming
-mode. Only one process is allowed to run in streaming mode, and multiple
+In `interactive` mode, `chronicle-receiver` uses the state database
+populated by another receiver process that is running in scanning
+mode. Only one process is allowed to run in scanning mode, and multiple
 processes can be started in interactive mode.
 
 The exporter plugin, or probably some other plugin, receives a request
 for particular block number. This request is passed to the receiver and
 requested from `state_history_plugin`.
 
-During the processing, the decoder retrieves required contract ABI from
-its ABI history, so that it's the latest copy from a block number that
-is below the requested block.
+During request processing, the decoder retrieves required contract ABI
+from its ABI history, so that it's the latest copy from a block number
+that is below the requested block.
 
-Then, the same way as in streaming mode, the decoded data is translated
-into JSON and passed to the exporter plugin.
+Then, the same way as in scanning mode, decoded data is translated into
+JSON and passed to the exporter plugin.
 
-The receiver does not expect any acknowledgements in interactive mode.
+Receiver does not expect any acknowledgements in interactive mode.
 
 Note that in case of `exp_ws_plugin`, you need to specify a different
 TCP port of the websocket server, so that it does not interfere with the
-websocket communication in streaming mode.
+websocket communication in scanning mode when export is enabled.
 
 
 
@@ -210,7 +215,7 @@ cat >/home/eosio/chronicle-config/config.ini <<'EOT'
 # connection to nodeos state_history_plugin
 host = 127.0.0.1
 port = 8080
-# Websocket exporter in bidirectional mode
+mode = scan
 plugin = exp_ws_plugin
 exp-ws-host = 127.0.0.1
 exp-ws-port = 8800
@@ -291,18 +296,23 @@ The following options are available from command line and `config.ini`:
 
 * `receiver-state-db-size = N` (=`1024`): State database size in MB;
 
+* `mode = MODE`: mandatory receiver mode. Possible values:
+
+  * `scan`: read state history blocks sequentially and export via export
+    plugin.
+
+  * `scan-noexport`: read state history blocks sequentially and skip any
+    export. This is the fastest mode to collect ABI revisions so that
+    interactive access can fetch required blocks.
+
+  * `interactive`: interactove mode allows the consumer request random
+    blocks.
+
 * `report-every = N` (=`10000`) Print informational messages every so
   many blocks;
 
 * `max-queue-size = N` (=`10000`) If the asynchronous processing queue
   reaches this limit, the receiver will pause.
-
-* `interactive = true|false` (=`false`) Run the receiver in interactive
-  mode.
-
-* `noexport = true|false` (=`false`) Disable all export. This will allow
-  `chronicle-receiver` scan the state history and save all ABI history
-  only.
 
 * `skip-block-events = true|false` (=`false`) Disable BLOCK events in
   export. This saves CPU time if you don't need block attributes, such
