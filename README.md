@@ -372,12 +372,11 @@ additional patch. Newer versions of those libraries are introducing some
 incompatible changes, and the work is in progress to adapt Chronicle to
 those changes.
 
-## Release candidate 1.1
+## Release 1.1
 
-* Unidirectional mode is no loner supported. The receiver must rely only
-  on confirmed block numbers.
+* Unidirectional mode is no longer supported.
 
-* `skip-to` option is no longer supported.
+* `skip-to` option is removed.
 
 * `exp_zmq_plugin` is removed because of instable work with Boost ASIO.
 
@@ -387,11 +386,13 @@ those changes.
 
 * In addition to latest copy of ABI for each contract, the internal
   state database stores a history of all ABI revisions for all
-  contract. This is used in interactive mode.
+  contracts. This is used in interactive mode.
 
-* Added interactive mode
+* New configuration option: `mode` and 3 modes: `scan`, `scan-noexport`,
+  and `interactive`. Interactive mode allows requesting individual
+  blocks and block ranges.
 
-* Added irreversible-only and end-block options
+* New options: `irreversible-only`, `end-block`.
 
 
 
