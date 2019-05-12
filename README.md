@@ -45,6 +45,9 @@ stop and close its downstream connection. Also if the downstream
 connection closes, the receiver will stop itself and close the
 connection to `nodeos`.
 
+Chronicle receiver version 1.1 is compatible with `nodeos` versions
+prior to 1.8.
+
 
 ## Scanning mode
 
@@ -356,8 +359,8 @@ Options for `exp_ws_plugin`:
 # Sample output
 
 At
-https://cloudflare-ipfs.com/ipfs/QmZeR8hq9Vxh3VBy6YDYMJBzGSRR7kRReTiXRAgWRzdgRW
-you can download about 76MB of gzipped JSON output. The raw output of
+https://cloudflare-ipfs.com/ipfs/Qmb2JKi5PrYFBinXW2wbYS4A75YdhDRWEy1DLnPuxq8Hyj
+you can download about 31MB of gzipped JSON output. The raw output of
 `exp_ws_plugin` is prettyfied and separated by double newline
 characters.
 
@@ -394,6 +397,11 @@ those changes.
 
 * New options: `irreversible-only`, `end-block`.
 
+
+# Thirt-party software
+
+* Docker file provided by EOS Tribe:
+  https://github.com/EOSTribe/eos-chronicle-docker
 
 
 
