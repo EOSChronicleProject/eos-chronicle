@@ -7,7 +7,7 @@ namespace state_history {
 
 struct extension {
     uint16_t             type = {};
-    abieos::bytes data = {};
+    abieos::input_buffer data = {};
 };
 
 template <typename F>
@@ -182,7 +182,7 @@ struct action {
     abieos::name                  account       = {};
     abieos::name                  name          = {};
     std::vector<permission_level> authorization = {};
-    abieos::bytes          data          = {};
+    abieos::input_buffer          data          = {};
 };
 
 template <typename F>
@@ -233,7 +233,7 @@ struct partial_transaction_v0 {
     abieos::varuint32                 delay_sec              = {};
     std::vector<extension>            transaction_extensions = {};
     std::vector<abieos::signature>    signatures             = {};
-    std::vector<abieos::bytes> context_free_data      = {};
+    std::vector<abieos::input_buffer> context_free_data      = {};
 };
 
 template <typename F>
@@ -338,8 +338,8 @@ constexpr void for_each_field(transaction_receipt_header*, F f) {
 struct packed_transaction {
     std::vector<abieos::signature> signatures               = {};
     uint8_t                        compression              = {};
-    abieos::bytes           packed_context_free_data = {};
-    abieos::bytes           packed_trx               = {};
+    abieos::input_buffer           packed_context_free_data = {};
+    abieos::input_buffer           packed_trx               = {};
 };
 
 template <typename F>

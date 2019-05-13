@@ -80,6 +80,7 @@ namespace chronicle {
       uint32_t                           block_num;
       abieos::block_timestamp            block_timestamp;
       state_history::transaction_trace   trace;
+      std::shared_ptr<std::vector<char>> buffer;
     };
 
     template <typename F>

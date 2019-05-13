@@ -206,11 +206,11 @@ CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_history, chronicle::contract_abi_hist_index)
 
 
-std::vector<char> zlib_decompress(input_buffer data) {
-  std::vector<char>      out;
+std::shared_ptr<std::vector<char>> zlib_decompress(input_buffer data) {
+  std::shared_ptr<std::vector<char>> out = std::make_shared<std::vector<char>>();
   bio::filtering_ostream decomp;
   decomp.push(bio::zlib_decompressor());
-  decomp.push(bio::back_inserter(out));
+  decomp.push(bio::back_inserter(*out));
   bio::write(decomp, data.pos, data.end - data.pos);
   bio::close(decomp);
   return out;
@@ -747,7 +747,7 @@ public:
 
   void receive_deltas(input_buffer buf) {
     auto         data = zlib_decompress(buf);
-    input_buffer bin{data.data(), data.data() + data.size()};
+    input_buffer bin{data->data(), data->data() + data->size()};
 
     uint32_t num;
     string error;
@@ -969,13 +969,14 @@ public:
   void receive_traces(input_buffer buf) {
     if (_transaction_traces_chan.has_subscribers()) {
       auto         data = zlib_decompress(buf);
-      input_buffer bin{data.data(), data.data() + data.size()};
+      input_buffer bin{data->data(), data->data() + data->size()};
       uint32_t num;
       string       error;
       if( !read_varuint32(bin, error, num) )
         throw runtime_error(error);
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
+        tr->buffer = data;
         if (!bin_to_native(tr->trace, error, bin))
           throw runtime_error("transaction_trace conversion error: " + error);
         // check blacklist

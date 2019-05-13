@@ -24,6 +24,7 @@ using namespace state_history;
 using std::make_shared;
 
 
+
 namespace json_encoder {
   inline constexpr bool trace_native_to_json = false;
   
@@ -97,6 +98,11 @@ namespace json_encoder {
   inline void native_to_json(const abieos::might_not_exist<T>& obj, native_to_json_state& state) {
     native_to_json(obj.value, state);
   }
+
+  inline void native_to_json(const abieos::input_buffer& obj, native_to_json_state& state) {
+    std::string result = fc::to_hex(obj.pos, obj.end-obj.pos);
+    state.writer.String(result.data(), result.size());    
+  }
   
   template <unsigned size>
   inline void native_to_json(const fixed_binary<size>& obj, native_to_json_state& state) {
@@ -126,7 +132,7 @@ namespace json_encoder {
               action_type = abieos_name_to_string(ctxt, obj.name.value);
             try {
               const char* datajs = abieos_bin_to_json(ctxt, obj.account.value, action_type,
-                                                      obj.data.data.data(), obj.data.data.size());
+                                                      obj.data.pos, obj.data.end-obj.data.pos);
               if( datajs == nullptr )
                 throw runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(datajs, strlen(datajs), rapidjson::kObjectType);
