@@ -17,7 +17,9 @@
 
 using namespace chronicle::channels;
 using namespace abieos;
+
 using namespace chain_state;
+using namespace state_history;
 
 using std::make_shared;
 
@@ -72,7 +74,7 @@ namespace json_encoder {
     state.writer.EndArray();
   }
 
-  inline void native_to_json(const chain_state::transaction_status& obj, native_to_json_state& state) {
+  inline void native_to_json(const state_history::transaction_status& obj, native_to_json_state& state) {
     std::string result = to_string(obj);
     state.writer.String(result.data(), result.size());
   }
@@ -82,16 +84,26 @@ namespace json_encoder {
     state.writer.String(result.data(), result.size());
   }
 
-  inline void native_to_json(const name& obj, native_to_json_state& state) {
+  inline void native_to_json(const abieos::name& obj, native_to_json_state& state) {
     std::string result = name_to_string(obj.value);
     state.writer.String(result.data(), result.size());
   }
   
-  inline void native_to_json(const bytes& obj, native_to_json_state& state) {
+  inline void native_to_json(const abieos::bytes& obj, native_to_json_state& state) {
     std::string result = fc::to_hex(obj.data.data(), obj.data.size());
     state.writer.String(result.data(), result.size());
   }
 
+  template <typename T>
+  inline void native_to_json(const abieos::might_not_exist<T>& obj, native_to_json_state& state) {
+    native_to_json(obj.value, state);
+  }
+
+  inline void native_to_json(const abieos::input_buffer& obj, native_to_json_state& state) {
+    std::string result = fc::to_hex(obj.pos, obj.end-obj.pos);
+    state.writer.String(result.data(), result.size());    
+  }
+  
   template <unsigned size>
   inline void native_to_json(const fixed_binary<size>& obj, native_to_json_state& state) {
     std::string result = fc::to_hex((const char*)obj.value.data(), obj.value.size());
@@ -107,12 +119,9 @@ namespace json_encoder {
     arithmetic_to_json(obj.value, state);
   }
   
-  inline void native_to_json(const chain_state::action_trace& obj, native_to_json_state& state) {
+  inline void native_to_json(const state_history::action& obj, native_to_json_state& state) {
     state.writer.StartObject();
-    for_each_field((chain_state::action_trace*)nullptr, [&](auto* name, auto member_ptr) {
-        if( string("dummy") == name ) {
-          return;
-        }
+    for_each_field((state_history::action*)nullptr, [&](auto* name, auto member_ptr) {
         state.writer.Key(name);
         if( string("data") == name ) {
           // encode action data according to ABI
@@ -123,7 +132,7 @@ namespace json_encoder {
               action_type = abieos_name_to_string(ctxt, obj.name.value);
             try {
               const char* datajs = abieos_bin_to_json(ctxt, obj.account.value, action_type,
-                                                      obj.data.data.data(), obj.data.data.size());
+                                                      obj.data.pos, obj.data.end-obj.data.pos);
               if( datajs == nullptr )
                 throw runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(datajs, strlen(datajs), rapidjson::kObjectType);
@@ -149,42 +158,9 @@ namespace json_encoder {
       });
     state.writer.EndObject();
   }
-  
-  void native_to_json(const chain_state::recurse_action_trace& obj, native_to_json_state& state) {
-    const chain_state::action_trace& o = obj; native_to_json(o, state);
-  }
+ 
 
-  
-  inline void native_to_json(const chain_state::transaction_trace& obj, native_to_json_state& state) {
-    state.writer.StartObject();
-    for_each_field((chain_state::transaction_trace*)nullptr, [&](auto* name, auto member_ptr) {
-        if( string("dummy") == name ) {
-          return;
-        }
-        state.writer.Key(name);
-        native_to_json(member_from_void(member_ptr, &obj), state);
-      });
-    state.writer.EndObject();
-  }
-
-  
-  void native_to_json(const chain_state::recurse_transaction_trace& obj, native_to_json_state& state) {
-    const chain_state::transaction_trace& o = obj; native_to_json(o, state);
-  }
-
-  
-  inline void native_to_json(const chain_state::action_receipt& obj, native_to_json_state& state) {
-    state.writer.StartObject();
-    for_each_field((chain_state::action_receipt*)nullptr, [&](auto* name, auto member_ptr) {
-        if( string("dummy") == name ) {
-          return;
-        }
-        state.writer.Key(name);
-        native_to_json(member_from_void(member_ptr, &obj), state);
-      });
-    state.writer.EndObject();
-  }
-    
+      
 
   inline void native_to_json(const chain_state::key_value_object& obj, native_to_json_state& state) {
     state.writer.StartObject();
@@ -226,12 +202,7 @@ namespace json_encoder {
     state.writer.EndObject();
 
   }
-
-  template <typename T>
-  inline void native_to_json(const abieos::might_not_exist<T>& obj, native_to_json_state& state) {
-    native_to_json(obj.value, state);
-  }
-
+  
   template <typename T>
   inline void native_to_json(const std::optional<T>& obj, native_to_json_state& state) {
     if( obj ) {
@@ -271,17 +242,11 @@ namespace json_encoder {
     state.writer.String(str.data(), str.length());
   }
 
-  // this is only to break compiler's recursion
-  inline void native_to_json(const chain_state::packed_transaction& obj, native_to_json_state& state) {
-    state.writer.StartObject();
-    for_each_field((chain_state::packed_transaction*)nullptr, [&](auto* name, auto member_ptr) {
-        state.writer.Key(name);
-        native_to_json(member_from_void(member_ptr, &obj), state);
-      });
-    state.writer.EndObject();
+  inline void native_to_json(const state_history::transaction_trace& obj, native_to_json_state& state) {
+    native_to_json(std::get<state_history::transaction_trace_v0>(obj), state);
   }
 
-  inline void native_to_json(const chain_state::transaction_variant& obj, native_to_json_state& state) {
+  inline void native_to_json(const state_history::transaction_variant& obj, native_to_json_state& state) {
     if( obj.index() == 0 ) {
       const checksum256& v = std::get<checksum256>(obj);
       native_to_json(v, state);
@@ -462,7 +427,8 @@ public:
       attrs["where"] = "transaction_trace";
       attrs["block_num"] = std::to_string(ccttr->block_num);
       attrs["block_timestamp"] = string(ccttr->block_timestamp);
-      attrs["trx_id"] = fc::to_hex((const char*)ccttr->trace.id.value.data(), ccttr->trace.id.value.size());
+      auto& trace = std::get<state_history::transaction_trace_v0>(ccttr->trace);
+      attrs["trx_id"] = fc::to_hex((const char*)trace.id.value.data(), trace.id.value.size());
       report_encoder_errors(encoder_errors, attrs);
     }
   }

@@ -1,5 +1,6 @@
 #include <appbase/application.hpp>
 #include "chain_state_types.hpp"
+#include "state_history.hpp"
 #include <abieos.h>
 
 using namespace appbase;
@@ -47,7 +48,7 @@ namespace chronicle {
     struct block {
       uint32_t                        block_num;
       uint32_t                        last_irreversible;
-      chain_state::signed_block       block;
+      state_history::signed_block     block;
     };
 
     template <typename F>
@@ -60,9 +61,9 @@ namespace chronicle {
     using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<block>>;
 
     struct block_table_delta {
-      uint32_t                     block_num;
-      abieos::block_timestamp      block_timestamp;
-      chain_state::table_delta_v0  table_delta;
+      uint32_t                       block_num;
+      abieos::block_timestamp        block_timestamp;
+      state_history::table_delta_v0  table_delta;
     };
 
     template <typename F>
@@ -76,9 +77,9 @@ namespace chronicle {
       channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;    
 
     struct transaction_trace {
-      uint32_t                        block_num;
-      abieos::block_timestamp         block_timestamp;
-      chain_state::transaction_trace  trace;
+      uint32_t                           block_num;
+      abieos::block_timestamp            block_timestamp;
+      state_history::transaction_trace   trace;
     };
 
     template <typename F>

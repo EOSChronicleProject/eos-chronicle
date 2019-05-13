@@ -33,7 +33,9 @@
 using namespace abieos;
 using namespace appbase;
 using namespace std::literals;
+
 using namespace chain_state;
+using namespace state_history;
 
 using std::enable_shared_from_this;
 using std::exception;
@@ -978,11 +980,12 @@ public:
           throw runtime_error("transaction_trace conversion error: " + error);
         // check blacklist
         bool blacklisted = false;
-        if( tr->trace.traces.size() > 0 ) {
-          auto &at = tr->trace.traces[0];
-          auto search_acc = blacklist_actions.find(at.account);
+        auto& trace = std::get<state_history::transaction_trace_v0>(tr->trace);
+        if( trace.action_traces.size() > 0 ) {
+          auto &at = std::get<state_history::action_trace_v0>(trace.action_traces[0]);
+          auto search_acc = blacklist_actions.find(at.receiver);
           if(search_acc != blacklist_actions.end()) {
-            if( search_acc->second.count(at.name) != 0 ) {
+            if( search_acc->second.count(at.act.name) != 0 ) {
               blacklisted = true;
             }
           }
