@@ -20,26 +20,14 @@ namespace chain_state {
 
   struct account_object {
     abieos::name         name;
-    uint8_t              vm_type;
-    uint8_t              vm_version;
-    bool                 privileged;
-    time_point           last_code_update;
-    checksum256          code_version;
     block_timestamp      creation_date;
-    bytes                code;
     bytes                abi;
   };
 
   template <typename F>
   constexpr void for_each_field(account_object*, F f) {
     f("name", member_ptr<&account_object::name>{});
-    f("vm_type", member_ptr<&account_object::vm_type>{});
-    f("vm_version", member_ptr<&account_object::vm_version>{});
-    f("privileged", member_ptr<&account_object::privileged>{});
-    f("last_code_update", member_ptr<&account_object::last_code_update>{});
-    f("code_version", member_ptr<&account_object::code_version>{});
     f("creation_date", member_ptr<&account_object::creation_date>{});
-    f("code", member_ptr<&account_object::code>{});
     f("abi", member_ptr<&account_object::abi>{});
   }
 

@@ -226,6 +226,11 @@ namespace json_encoder {
     state.writer.String(str.data(), str.length());
   }
 
+  inline void native_to_json(const abieos::time_point_sec& obj, native_to_json_state& state) {
+    string str = string(obj);
+    state.writer.String(str.data(), str.length());
+  }
+  
   inline void native_to_json(const abieos::public_key& obj, native_to_json_state& state) {
     string str;
     string error;
@@ -242,21 +247,6 @@ namespace json_encoder {
     state.writer.String(str.data(), str.length());
   }
 
-  inline void native_to_json(const state_history::transaction_trace& obj, native_to_json_state& state) {
-    native_to_json(std::get<state_history::transaction_trace_v0>(obj), state);
-  }
-
-  inline void native_to_json(const state_history::transaction_variant& obj, native_to_json_state& state) {
-    if( obj.index() == 0 ) {
-      const checksum256& v = std::get<checksum256>(obj);
-      native_to_json(v, state);
-    }
-    else {
-      const packed_transaction& v = std::get<packed_transaction>(obj);
-      native_to_json(v, state);
-    }
-  }
-  
   template <typename T>
   void native_to_json(const T& obj, native_to_json_state& state) {
     if constexpr (std::is_class_v<T>) {
@@ -272,6 +262,59 @@ namespace json_encoder {
       arithmetic_to_json(obj, state);
     }
   }
+
+  template
+  void native_to_json<state_history::action_receipt_v0>(const state_history::action_receipt_v0&,
+                                                        native_to_json_state&);
+
+  template
+  void native_to_json<state_history::action_trace_v0>(const state_history::action_trace_v0&,
+                                                      native_to_json_state&);
+  
+  template
+  void native_to_json<state_history::partial_transaction_v0>(const state_history::partial_transaction_v0&,
+                                                             native_to_json_state&);
+
+  template
+  void native_to_json<state_history::transaction_trace_v0>(const state_history::transaction_trace_v0&,
+                                                           native_to_json_state&);
+
+  template
+  void native_to_json<state_history::packed_transaction>(const state_history::packed_transaction&,
+                                                         native_to_json_state&);
+
+  inline void native_to_json(const state_history::action_receipt& obj, native_to_json_state& state) {
+    native_to_json(std::get<state_history::action_receipt_v0>(obj), state);
+  }
+
+  inline void native_to_json(const state_history::action_trace& obj, native_to_json_state& state) {
+    native_to_json(std::get<state_history::action_trace_v0>(obj), state);
+  }
+
+  inline void native_to_json(const state_history::partial_transaction& obj, native_to_json_state& state) {
+    native_to_json(std::get<state_history::partial_transaction_v0>(obj), state);
+  }
+
+  inline void native_to_json(const state_history::transaction_trace& obj, native_to_json_state& state) {
+    native_to_json(std::get<state_history::transaction_trace_v0>(obj), state);
+  }
+
+  inline void native_to_json(const state_history::recurse_transaction_trace& obj, native_to_json_state& state) {
+    native_to_json(obj.recurse, state);
+  }
+
+    
+  inline void native_to_json(const state_history::transaction_variant& obj, native_to_json_state& state) {
+    if( obj.index() == 0 ) {
+      const checksum256& v = std::get<checksum256>(obj);
+      native_to_json(v, state);
+    }
+    else {
+      const packed_transaction& v = std::get<packed_transaction>(obj);
+      native_to_json(v, state);
+    }
+  }
+  
 
   // ABI decoder uses this to produce an independent piece of JSON
   template <typename T>
