@@ -182,7 +182,7 @@ sudo apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test
 
 mkdir build
 cd build
-git clone https://github.com/EOSChronicleProject/eos-chronicle.git
+git clone -b nodeos0108 https://github.com/EOSChronicleProject/eos-chronicle.git
 cd eos-chronicle
 git submodule update --init --recursive
 mkdir build
