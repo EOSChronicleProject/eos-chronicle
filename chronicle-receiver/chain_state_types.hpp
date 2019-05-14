@@ -92,7 +92,7 @@ namespace chain_state {
     abieos::name          table;
     uint64_t              primary_key;
     abieos::name          payer;
-    bytes                 value;
+    abieos::input_buffer  value;
   };
 
   template <typename F>

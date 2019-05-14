@@ -175,7 +175,7 @@ namespace json_encoder {
               table_type = abieos_name_to_string(ctxt, obj.table.value);
             try {
               const char* valjs = abieos_bin_to_json(ctxt, obj.code.value, table_type,
-                                                     obj.value.data.data(), obj.value.data.size());
+                                                     obj.value.pos, obj.value.end-obj.value.pos);
               if( valjs == nullptr )
                 throw runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(valjs, strlen(valjs), rapidjson::kObjectType);

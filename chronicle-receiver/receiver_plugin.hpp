@@ -2,8 +2,10 @@
 #include "chain_state_types.hpp"
 #include "state_history.hpp"
 #include <abieos.h>
+#include <boost/beast/core/flat_buffer.hpp>
 
 using namespace appbase;
+using boost::beast::flat_buffer;
 
 namespace chronicle {
 
@@ -46,9 +48,10 @@ namespace chronicle {
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
 
     struct block {
-      uint32_t                        block_num;
-      uint32_t                        last_irreversible;
-      state_history::signed_block     block;
+      uint32_t                             block_num;
+      uint32_t                             last_irreversible;
+      state_history::signed_block          block;
+      std::shared_ptr<flat_buffer>         buffer;
     };
 
     template <typename F>
@@ -61,9 +64,10 @@ namespace chronicle {
     using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<block>>;
 
     struct block_table_delta {
-      uint32_t                       block_num;
-      abieos::block_timestamp        block_timestamp;
-      state_history::table_delta_v0  table_delta;
+      uint32_t                                   block_num;
+      abieos::block_timestamp                    block_timestamp;
+      state_history::table_delta_v0              table_delta;
+      std::shared_ptr<std::vector<char>>         buffer;
     };
 
     template <typename F>
@@ -77,10 +81,10 @@ namespace chronicle {
       channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;    
 
     struct transaction_trace {
-      uint32_t                           block_num;
-      abieos::block_timestamp            block_timestamp;
-      state_history::transaction_trace   trace;
-      std::shared_ptr<std::vector<char>> buffer;
+      uint32_t                                 block_num;
+      abieos::block_timestamp                  block_timestamp;
+      state_history::transaction_trace         trace;
+      std::shared_ptr<std::vector<char>>       buffer;
     };
 
     template <typename F>
@@ -144,10 +148,11 @@ namespace chronicle {
     using abi_errors = channel_decl<struct abi_errors_tag, std::shared_ptr<abi_error>>;
 
     struct table_row_update {
-      uint32_t                           block_num;
-      abieos::block_timestamp            block_timestamp;
-      bool                               added; // false==removed
-      chain_state::key_value_object      kvo;
+      uint32_t                                 block_num;
+      abieos::block_timestamp                  block_timestamp;
+      bool                                     added; // false==removed
+      chain_state::key_value_object            kvo;
+      std::shared_ptr<std::vector<char>>       buffer;
     };
 
     template <typename F>

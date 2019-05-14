@@ -492,7 +492,7 @@ public:
     return true;
   }
 
-  void receive_abi(const shared_ptr<flat_buffer>& p) {
+  void receive_abi(const shared_ptr<flat_buffer> p) {
     auto data = p->data();
     std::string error;
     abi_def abi{};
@@ -591,7 +591,7 @@ public:
   }
 
 
-  bool receive_result(const shared_ptr<flat_buffer>& p) {
+  bool receive_result(const shared_ptr<flat_buffer> p) {
     auto         data = p->data();
     input_buffer bin{(const char*)data.data(), (const char*)data.data() + data.size()};
     check_variant(bin, get_type("result"), "get_blocks_result_v0");
@@ -677,11 +677,11 @@ public:
     irreversible_id = result.last_irreversible.block_id;
 
     if (result.block)
-      receive_block(*result.block);
+      receive_block(*result.block, p);
     if (result.deltas)
-      receive_deltas(*result.deltas);
+      receive_deltas(*result.deltas, p);
     if (result.traces)
-      receive_traces(*result.traces);
+      receive_traces(*result.traces, p);
 
     auto bf = std::make_shared<chronicle::channels::block_finished>();
     bf->block_num = head;
@@ -725,7 +725,7 @@ public:
   }
 
 
-  void receive_block(input_buffer bin) {
+  void receive_block(input_buffer bin, const shared_ptr<flat_buffer>& p) {
     if (head == irreversible) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
@@ -733,6 +733,7 @@ public:
     auto block_ptr = std::make_shared<chronicle::channels::block>();
     block_ptr->block_num = head;
     block_ptr->last_irreversible = irreversible;
+    block_ptr->buffer = p;
 
     string error;
     if (!bin_to_native(block_ptr->block, error, bin))
@@ -745,7 +746,7 @@ public:
 
 
 
-  void receive_deltas(input_buffer buf) {
+  void receive_deltas(input_buffer buf, const shared_ptr<flat_buffer>& p) {
     auto         data = zlib_decompress(buf);
     input_buffer bin{data->data(), data->data() + data->size()};
 
@@ -758,7 +759,8 @@ public:
 
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
       bltd->block_timestamp = block_timestamp;
-
+      bltd->buffer = data;
+        
       string error;
       if (!bin_to_native(bltd->table_delta, error, bin))
         throw runtime_error("table_delta conversion error: " + error);
@@ -796,7 +798,8 @@ public:
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             tru->block_num = head;
             tru->block_timestamp = block_timestamp;
-
+            tru->buffer = data;
+            
             string error;
             if (!bin_to_native(tru->kvo, error, row.data))
               throw runtime_error("cannot read table row object" + error);
@@ -966,7 +969,7 @@ public:
   }
 
 
-  void receive_traces(input_buffer buf) {
+  void receive_traces(input_buffer buf, const shared_ptr<flat_buffer>& p) {
     if (_transaction_traces_chan.has_subscribers()) {
       auto         data = zlib_decompress(buf);
       input_buffer bin{data->data(), data->data() + data->size()};
