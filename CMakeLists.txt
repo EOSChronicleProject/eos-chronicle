@@ -82,3 +82,6 @@ foreach(ADDITIONAL_PLUGIN_TARGET ${ADDITIONAL_PLUGINS_TARGET})
   target_link_libraries(chronicle-receiver PRIVATE -Wl,${whole_archive_flag} ${ADDITIONAL_PLUGIN_TARGET} -Wl,${no_whole_archive_flag} )
 endforeach()
 
+
+## Installables
+install(TARGETS chronicle-receiver RUNTIME DESTINATION sbin)
