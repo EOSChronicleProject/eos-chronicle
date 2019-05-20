@@ -196,6 +196,29 @@ make
 
 
 
+# State history
+
+Chronicle release 1.7 is compatible with nodeos 1.7, and newer Chronicle
+versions are only compatible with nodeos 1.8 or higher.
+
+In order for Chronicle to function properly, both `trace-history` and
+`chain-state-history` need to be enabled. Also if contract console
+output needs to be present in Chronicle output,
+`trace-history-debug-mode` needs to be enabled too.
+
+Example `config.ini` for nodeos 1.8:
+
+```
+contracts-console = true
+validation-mode = light
+plugin = eosio::state_history_plugin
+trace-history = true
+chain-state-history = true
+trace-history-debug-mode = true
+state-history-endpoint = 0.0.0.0:8080
+```
+
+
 # Configuring and running
 
 Similarly to `nodeos`, `chronicle-receiver` needs a configuratuion
