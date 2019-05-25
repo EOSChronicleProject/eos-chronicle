@@ -29,12 +29,15 @@ set(PLATFORM_SPECIFIC_LIBS pthread)
 
 set(CMAKE_BUILD_TYPE Debug)
 
+add_definitions(-DCHAINBASE_CHECK_LOCKING)
+
 add_subdirectory(external/chainbase)
 add_subdirectory(external/appbase)
 add_subdirectory(external/fc)
 
 add_executable(chronicle-receiver
   external/abieos/src/abieos.cpp
+  external/chainbase/src/chainbase.cpp
   chronicle-receiver/main.cpp
   chronicle-receiver/chain_state_types.cpp
   chronicle-receiver/receiver_plugin.cpp

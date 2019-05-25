@@ -453,8 +453,6 @@ public:
         app().get_priority_queue().size() > max_queue_size ||
         (!interactive_mode && head == end_block_num -1)) {
 
-      slowdown_requested = false;
-
       if ( head == end_block_num -1 && irreversible >= head &&
            (!exporter_will_ack || exporter_acked_block == head) ) {
         ilog("Reached the end block ${b}. Stopping the receiver.", ("b", head));
@@ -689,7 +687,13 @@ public:
     if( aborting )
       return false;
 
-    if (!interactive_mode) {
+    if (interactive_mode) {
+      if (report_every > 0 && head % report_every == 0) {
+        ilog("block=${h}; irreversible=${i}", ("h",head)("i",irreversible));
+        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+      }
+    }
+    else {
       save_state();
       undo_session.push();     // save a new revision
       commit_db();
@@ -1269,8 +1273,8 @@ void receiver_plugin::ack_block(uint32_t block_num) {
 }
 
 
-void receiver_plugin::slowdown() {
-  my->slowdown_requested = true;
+void receiver_plugin::slowdown(bool pause) {
+  my->slowdown_requested = pause;
 }
 
 

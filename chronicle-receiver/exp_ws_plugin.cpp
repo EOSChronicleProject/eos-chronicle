@@ -63,12 +63,13 @@ public:
   using msgbuf = std::vector<unsigned char>;
   std::queue<std::shared_ptr<msgbuf>> async_queue;
   std::shared_ptr<msgbuf> async_msg; // this to prevent deallocation during async write
-  uint32_t queue_maxsize;
+  uint32_t queue_hwm;
+  uint32_t queue_lwm;
   boost::asio::const_buffer async_out_buffer;
   std::shared_ptr<boost::asio::deadline_timer> mytimer;
   
   uint32_t pause_time_msec = 0;
-  uint32_t prev_ack_reported = 0;
+  uint32_t msg_report_counter = 1000;
 
   exp_ws_plugin_impl() :
     _interactive_requests_chan(app().get_channel<chronicle::channels::interactive_requests>())
@@ -220,14 +221,11 @@ public:
              const auto in_data = in_buffer->data();
              uint64_t ack = std::stoul(string((const char*)in_data.data(), in_data.size()));
              if( ack > std::numeric_limits<uint32_t>::max() ) {
-               elog("Wrong data in acknowledgement: ${s}", ("s",string((const char*)in_data.data(), in_data.size())));
+               elog("Wrong data in acknowledgement: ${s}",
+                    ("s",string((const char*)in_data.data(), in_data.size())));
                throw std::runtime_error("Consumer acknowledged block number higher than UINT32_MAX");
              }
              ack_block(ack);
-             if( ack - prev_ack_reported > 10000 ) {
-               ilog("exp_ws_plugin queue_size=${q}", ("q",async_queue.size()));
-               prev_ack_reported = ack;
-             }
              async_read_acks();
            }
          }));
@@ -283,8 +281,12 @@ public:
     }
     else {
       pause_time_msec = 0;
-      if( async_queue.size() > queue_maxsize )
-        slowdown_receiver();
+      if( async_queue.size() >= queue_hwm ) {
+        slowdown_receiver(true);
+      }
+      else if( async_queue.size() < queue_lwm ) {
+        slowdown_receiver(false);
+      }              
       async_msg = async_queue.front();
       async_queue.pop();
       async_out_buffer = boost::asio::const_buffer(async_msg->data(), async_msg->size());
@@ -307,6 +309,11 @@ public:
     async_queue.push(buf);
     if( pause_time_msec > 0 )
       mytimer->cancel();
+    msg_report_counter--;
+    if( msg_report_counter == 0 ) {
+      ilog("exp_ws_plugin queue_size=${q}", ("q",async_queue.size()));
+      msg_report_counter = 10000;
+    }
   }
 
   
@@ -407,9 +414,10 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     if( my->maxunack == 0 )
       throw std::runtime_error("Maximum unacked blocks must be a positive integer");
 
-    my->queue_maxsize = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
-    if( my->queue_maxsize == 0 )
+    my->queue_hwm = options.at(WS_MAXQUEUE_OPT).as<uint32_t>();
+    if( my->queue_hwm == 0 )
       throw std::runtime_error("Maximum queue size must be a positive integer");
+    my->queue_lwm = my->queue_hwm * 3 / 4;
 
     my->use_bin_headers = options.at(WS_BINHDR).as<bool>();
     
