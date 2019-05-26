@@ -18,6 +18,11 @@
 #include <boost/program_options.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/asio/deadline_timer.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <boost/interprocess/mapped_region.hpp>
+#include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -58,6 +63,8 @@ namespace asio      = boost::asio;
 namespace bio       = boost::iostreams;
 namespace bpo       = boost::program_options;
 namespace websocket = boost::beast::websocket;
+namespace bip       = boost::interprocess;
+namespace bfs       = boost::filesystem;
 
 using asio::ip::tcp;
 using boost::beast::flat_buffer;
@@ -174,7 +181,6 @@ namespace chronicle {
     }
   };
 
-  // History is
   using contract_abi_hist_index = chainbase::shared_multi_index_container<
     contract_abi_history,
     indexed_by<
@@ -198,6 +204,11 @@ namespace chronicle {
                      >
       >
     >;
+
+  // shared-memory mutex for accessing chainbase
+  struct shmem_lock {
+    bip::interprocess_mutex mutex;
+  };
 }
 
 CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
@@ -237,6 +248,9 @@ public:
   {};
 
   shared_ptr<chainbase::database>       db;
+  bip::mapped_region                    _dblock_mapped_region;
+  chronicle::shmem_lock*                dblock;
+  
   shared_ptr<tcp::resolver>             resolver;
   shared_ptr<websocket::stream<tcp::socket>> stream;
   const int                             stream_priority = 40;
@@ -339,6 +353,7 @@ public:
     bool did_undo = false;
     uint32_t depth;
     {
+      bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
       auto &index = db->get_index<chronicle::state_index>();
       if( index.stack().size() > 0 ) {
         depth = index.stack().size();
@@ -348,7 +363,7 @@ public:
         did_undo = true;
       }
     }
-
+    
     const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
     if( itr != idx.end() ) {
@@ -455,8 +470,6 @@ public:
         app().get_priority_queue().size() > max_queue_size ||
         (!interactive_mode && head == end_block_num -1)) {
 
-      slowdown_requested = false;
-
       if ( head == end_block_num -1 && irreversible >= head &&
            (!exporter_will_ack || exporter_acked_block == head) ) {
         ilog("Reached the end block ${b}. Stopping the receiver.", ("b", head));
@@ -509,14 +522,17 @@ public:
 
   void request_blocks() {
     jarray positions;
-    const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
-    auto itr = idx.lower_bound(irreversible);
-    while( itr != idx.end() && itr->block_index <= head ) {
-      positions.push_back(jvalue{jobject{
-            {{"block_num"s}, {std::to_string(itr->block_index)}},
-              {{"block_id"s}, {(string)itr->block_id}},
-                }});
-      itr++;
+    {
+      bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
+      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+      auto itr = idx.lower_bound(irreversible);
+      while( itr != idx.end() && itr->block_index <= head ) {
+        positions.push_back(jvalue{jobject{
+              {{"block_num"s}, {std::to_string(itr->block_index)}},
+                {{"block_id"s}, {(string)itr->block_id}},
+                  }});
+        itr++;
+      }
     }
 
     uint32_t start_block = head + 1;
@@ -541,21 +557,24 @@ public:
 
 
   void on_block_req(std::shared_ptr<chronicle::channels::interactive_request> req) {
-    const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
-    auto itr = idx.begin();
-    if( itr == idx.end() ) {
-      elog("Receiver did not process any blocks yet");
-      return;
-    }
-    if( req->block_num_start > itr->head ) {
-      elog("Requested start block ${b} is higher than current head ${h}",
-           ("b",req->block_num_start)("h", itr->head));
-      return;
-    }
-    if( req->block_num_end > itr->head ) {
-      elog("Requested end block ${b} is higher than current head ${h}",
-           ("b",req->block_num_end)("h", itr->head));
-      return;
+    {
+      bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
+      const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
+      auto itr = idx.begin();
+      if( itr == idx.end() ) {
+        elog("Receiver did not process any blocks yet");
+        return;
+      }
+      if( req->block_num_start > itr->head ) {
+        elog("Requested start block ${b} is higher than current head ${h}",
+             ("b",req->block_num_start)("h", itr->head));
+        return;
+      }
+      if( req->block_num_end > itr->head ) {
+        elog("Requested end block ${b} is higher than current head ${h}",
+             ("b",req->block_num_end)("h", itr->head));
+        return;
+      }
     }
     interactive_req_queue.push(req);
     process_interactive_reqs();
@@ -616,6 +635,7 @@ public:
       }      
     }
     else {
+      bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
       if( db->revision() < block_num-1 ) {
         uint32_t newrev = block_num-1;
         dlog("Current DB revision: ${r}. Setting to ${n}", ("r",db->revision())("n",newrev));
@@ -654,23 +674,6 @@ public:
       }
     }
 
-    auto undo_session = db->start_undo_session( !interactive_mode );
-
-    if (!interactive_mode && block_num > irreversible ) {
-      // add the new block
-      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
-      db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
-          o.block_index = block_num;
-          o.block_id = block_id;
-        });
-      // truncate old blocks up to previously known irreversible
-      auto itr = idx.begin();
-      while( itr->block_index < irreversible && itr != idx.end() ) {
-        db->remove(*itr);
-        itr = idx.begin();
-      }
-    }
-
     head            = block_num;
     head_id         = block_id;
     irreversible    = last_irreversible_num;
@@ -678,8 +681,39 @@ public:
 
     if (result.block)
       receive_block(*result.block, p);
-    if (result.deltas)
-      receive_deltas(*result.deltas, p);
+
+    // state changing activities
+    if (!interactive_mode) {
+        bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
+        auto undo_session = db->start_undo_session(true);
+
+        if (block_num > irreversible) {
+          // add the new block
+          const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+          db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
+              o.block_index = block_num;
+              o.block_id = block_id;
+            });
+          // truncate old blocks up to previously known irreversible
+          auto itr = idx.begin();
+          while( itr->block_index < irreversible && itr != idx.end() ) {
+            db->remove(*itr);
+            itr = idx.begin();
+          }
+        }
+        
+        if (result.deltas)
+          receive_deltas(*result.deltas, p);
+        
+        save_state();
+        undo_session.push();     // save a new revision
+        commit_db();
+    }
+    else {
+      if (result.deltas)
+        receive_deltas(*result.deltas);
+    }
+      
     if (result.traces)
       receive_traces(*result.traces, p);
 
@@ -692,11 +726,13 @@ public:
     if( aborting )
       return false;
 
-    if (!interactive_mode) {
-      save_state();
-      undo_session.push();     // save a new revision
-      commit_db();
-
+    if (interactive_mode) {
+      if (report_every > 0 && head % report_every == 0) {
+        ilog("block=${h}; irreversible=${i}", ("h",head)("i",irreversible));
+        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+      }
+    }
+    else {
       if (head == end_block_num-1)
         ilog("Received last block before the end. Waiting for acknowledgement");
 
@@ -804,7 +840,7 @@ public:
             string error;
             if (!bin_to_native(tru->kvo, error, row.data))
               throw runtime_error("cannot read table row object" + error);
-            if( get_contract_abi_ready(tru->kvo.code) ) {
+            if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
               tru->added = row.present;
               _table_row_updates_chan.publish(channel_priority, tru);
             }
@@ -837,17 +873,19 @@ public:
   void clear_contract_abi(name account) {
     if( contract_abi_imported.count(account.value) > 0 )
       init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
-    const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-    auto itr = idx.find(account.value);
-    if( itr != idx.end() ) {
-      // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
-      db->remove(*itr);
-
-      auto ar =  std::make_shared<chronicle::channels::abi_removal>();
-      ar->block_num = head;
-      ar->block_timestamp = block_timestamp;
-      ar->account = account;
-      _abi_removals_chan.publish(channel_priority, ar);
+    {
+      const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+      auto itr = idx.find(account.value);
+      if( itr != idx.end() ) {
+        // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
+        db->remove(*itr);
+        
+        auto ar =  std::make_shared<chronicle::channels::abi_removal>();
+        ar->block_num = head;
+        ar->block_timestamp = block_timestamp;
+        ar->account = account;
+        _abi_removals_chan.publish(channel_priority, ar);
+      }
     }
     save_contract_abi_history(account, std::vector<char>());
   }
@@ -867,18 +905,20 @@ public:
       }
       contract_abi_imported.insert(account.value);
 
-      const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-      auto itr = idx.find(account.value);
-      if( itr != idx.end() ) {
-        db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
-            o.set_abi(data);
-          });
-      }
-      else {
-        db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
-            o.account = account.value;
-            o.set_abi(data);
-          });
+      {
+        const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+        auto itr = idx.find(account.value);
+        if( itr != idx.end() ) {
+          db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
+              o.set_abi(data);
+            });
+        }
+        else {
+          db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
+              o.account = account.value;
+              o.set_abi(data);
+            });
+        }
       }
 
       if (_abi_updates_chan.has_subscribers()) {
@@ -942,13 +982,17 @@ public:
   }
 
 
-  bool get_contract_abi_ready(name account) {
+  bool get_contract_abi_ready(name account, bool lock) {
     if( contract_abi_imported.count(account.value) > 0 )
       return true; // the context has this contract loaded
     if (interactive_mode) {
       dlog("ABI requested for ${a} and block ${h}", ("a",(std::string)account)("h",head));
+      if (lock)
+        dblock->mutex.lock();
       const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block_rev>();
       auto itr = idx.lower_bound(boost::make_tuple(account.value, head));
+      if (lock)
+        dblock->mutex.unlock();
       if( itr != idx.end() ) {
         dlog("Found in history: ABI for ${a}, block ${b}", ("a",(std::string)account)("b",itr->block_index));
         abieos_set_abi_bin(contract_abi_ctxt, account.value, itr->abi.data(), itr->abi.size());
@@ -957,8 +1001,12 @@ public:
       }
     }
     else {
+      if (lock)
+        dblock->mutex.lock();
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
       auto itr = idx.find(account.value);
+      if (lock)
+        dblock->mutex.unlock();
       if( itr != idx.end() ) {
         // dlog("Found in DB: ABI for ${a}", ("a",(std::string)account));
         abieos_set_abi_bin(contract_abi_ctxt, account.value, itr->abi.data(), itr->abi.size());
@@ -1155,20 +1203,48 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     ilog("Starting in ${m} mode", ("m", receiver_mode));
       
     string dbdir = app().data_dir().native() + "/receiver-state";
-    if (my->interactive_mode) {
-      my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
+    bfs::create_directories(dbdir);
+
+    bool new_lock = false;
+    string dblock_shm_file = dbdir + "/lock.bin";  
+    if(!bfs::exists(dblock_shm_file)) {
+      std::ofstream ofs(dblock_shm_file, std::ofstream::trunc);
+      ofs.close();
+      bfs::resize_file(dblock_shm_file, sizeof(chronicle::shmem_lock));
+      new_lock = true;
+    }
+
+    ilog("Using shared memory lock at ${f}", ("f", dblock_shm_file));
+    my->_dblock_mapped_region =
+      bip::mapped_region(bip::file_mapping(dblock_shm_file.c_str(), bip::read_write),
+                         bip::read_write,
+                         0, sizeof(chronicle::shmem_lock));
+
+    void* dblock_addr = my->_dblock_mapped_region.get_address();
+    if (new_lock) {
+      my->dblock = new (dblock_addr) chronicle::shmem_lock;
     }
     else {
-      my->db = std::make_shared<chainbase::database>
-        (dbdir, chainbase::database::read_write,
-         options.at(RCV_DBSIZE_OPT).as<uint32_t>() * 1024*1024);
+      my->dblock = static_cast<chronicle::shmem_lock*>(dblock_addr);
     }
 
-    my->db->add_index<chronicle::state_index>();
-    my->db->add_index<chronicle::received_block_index>();
-    my->db->add_index<chronicle::contract_abi_index>();
-    my->db->add_index<chronicle::contract_abi_hist_index>();
-
+    {
+      bip::scoped_lock<bip::interprocess_mutex> lock(my->dblock->mutex);
+      if (my->interactive_mode) {
+        my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
+      }
+      else {
+        my->db = std::make_shared<chainbase::database>
+          (dbdir, chainbase::database::read_write,
+           options.at(RCV_DBSIZE_OPT).as<uint32_t>() * 1024*1024);
+      }
+      
+      my->db->add_index<chronicle::state_index>();
+      my->db->add_index<chronicle::received_block_index>();
+      my->db->add_index<chronicle::contract_abi_index>();
+      my->db->add_index<chronicle::contract_abi_hist_index>();
+    }
+    
     my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
 
     my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
@@ -1277,13 +1353,13 @@ void receiver_plugin::ack_block(uint32_t block_num) {
 }
 
 
-void receiver_plugin::slowdown() {
-  my->slowdown_requested = true;
+void receiver_plugin::slowdown(bool pause) {
+  my->slowdown_requested = pause;
 }
 
 
 abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
-  my->get_contract_abi_ready(account);
+  my->get_contract_abi_ready(account, true);
   return my->contract_abi_ctxt;
 }
 
