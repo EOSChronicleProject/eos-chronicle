@@ -711,7 +711,7 @@ public:
     }
     else {
       if (result.deltas)
-        receive_deltas(*result.deltas);
+        receive_deltas(*result.deltas, p);
     }
       
     if (result.traces)
