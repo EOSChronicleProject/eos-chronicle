@@ -19,7 +19,10 @@
 #include <boost/asio/signal_set.hpp>
 #include <boost/asio/deadline_timer.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <boost/interprocess/mapped_region.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/interprocess/sync/scoped_lock.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -669,29 +672,6 @@ public:
       }
     }
 
-    if (!interactive_mode)
-      dblock->mutex.lock();
-      
-    auto undo_session = db->start_undo_session( !interactive_mode );
-
-    if (!interactive_mode && block_num > irreversible ) {
-      // add the new block
-      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
-      db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
-          o.block_index = block_num;
-          o.block_id = block_id;
-        });
-      // truncate old blocks up to previously known irreversible
-      auto itr = idx.begin();
-      while( itr->block_index < irreversible && itr != idx.end() ) {
-        db->remove(*itr);
-        itr = idx.begin();
-      }
-    }
-
-    if (!interactive_mode)
-      dblock->mutex.unlock();
-    
     head            = block_num;
     head_id         = block_id;
     irreversible    = last_irreversible_num;
@@ -699,8 +679,39 @@ public:
 
     if (result.block)
       receive_block(*result.block);
-    if (result.deltas)
-      receive_deltas(*result.deltas);
+
+    // state changing activities
+    if (!interactive_mode) {
+        bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
+        auto undo_session = db->start_undo_session(true);
+
+        if (block_num > irreversible) {
+          // add the new block
+          const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+          db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
+              o.block_index = block_num;
+              o.block_id = block_id;
+            });
+          // truncate old blocks up to previously known irreversible
+          auto itr = idx.begin();
+          while( itr->block_index < irreversible && itr != idx.end() ) {
+            db->remove(*itr);
+            itr = idx.begin();
+          }
+        }
+        
+        if (result.deltas)
+          receive_deltas(*result.deltas);
+        
+        save_state();
+        undo_session.push();     // save a new revision
+        commit_db();
+    }
+    else {
+      if (result.deltas)
+        receive_deltas(*result.deltas);
+    }
+      
     if (result.traces)
       receive_traces(*result.traces);
 
@@ -719,13 +730,6 @@ public:
       }
     }
     else {
-      {
-        bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
-        save_state();
-        undo_session.push();     // save a new revision
-        commit_db();
-      }
-
       if (head == end_block_num-1)
         ilog("Received last block before the end. Waiting for acknowledgement");
 
@@ -830,7 +834,7 @@ public:
             string error;
             if (!bin_to_native(tru->kvo, error, row.data))
               throw runtime_error("cannot read table row object" + error);
-            if( get_contract_abi_ready(tru->kvo.code) ) {
+            if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
               tru->added = row.present;
               _table_row_updates_chan.publish(channel_priority, tru);
             }
@@ -864,7 +868,6 @@ public:
     if( contract_abi_imported.count(account.value) > 0 )
       init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
     {
-      bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
       auto itr = idx.find(account.value);
       if( itr != idx.end() ) {
@@ -897,7 +900,6 @@ public:
       contract_abi_imported.insert(account.value);
 
       {
-        bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
         const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
         auto itr = idx.find(account.value);
         if( itr != idx.end() ) {
@@ -941,7 +943,6 @@ public:
 
 
   void save_contract_abi_history(name account, std::vector<char> data) {
-    bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
     const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block>();
     auto itr = idx.find(boost::make_tuple(account.value, head));
     if( itr != idx.end() ) {
@@ -975,15 +976,17 @@ public:
   }
 
 
-  bool get_contract_abi_ready(name account) {
+  bool get_contract_abi_ready(name account, bool lock) {
     if( contract_abi_imported.count(account.value) > 0 )
       return true; // the context has this contract loaded
     if (interactive_mode) {
       dlog("ABI requested for ${a} and block ${h}", ("a",(std::string)account)("h",head));
-      dblock->mutex.lock();
+      if (lock)
+        dblock->mutex.lock();
       const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block_rev>();
       auto itr = idx.lower_bound(boost::make_tuple(account.value, head));
-      dblock->mutex.unlock();
+      if (lock)
+        dblock->mutex.unlock();
       if( itr != idx.end() ) {
         dlog("Found in history: ABI for ${a}, block ${b}", ("a",(std::string)account)("b",itr->block_index));
         abieos_set_abi_bin(contract_abi_ctxt, account.value, itr->abi.data(), itr->abi.size());
@@ -992,10 +995,12 @@ public:
       }
     }
     else {
-      dblock->mutex.lock();
+      if (lock)
+        dblock->mutex.lock();
       const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
       auto itr = idx.find(account.value);
-      dblock->mutex.unlock();
+      if (lock)
+        dblock->mutex.unlock();
       if( itr != idx.end() ) {
         // dlog("Found in DB: ABI for ${a}", ("a",(std::string)account));
         abieos_set_abi_bin(contract_abi_ctxt, account.value, itr->abi.data(), itr->abi.size());
@@ -1191,22 +1196,32 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       
     string dbdir = app().data_dir().native() + "/receiver-state";
     bfs::create_directories(dbdir);
-    
-    string dblock_shm_file = dbdir + "/lock.bin";
+
+    bool new_lock = false;
+    string dblock_shm_file = dbdir + "/lock.bin";  
     if(!bfs::exists(dblock_shm_file)) {
       std::ofstream ofs(dblock_shm_file, std::ofstream::trunc);
+      ofs.close();
       bfs::resize_file(dblock_shm_file, sizeof(chronicle::shmem_lock));
+      new_lock = true;
     }
 
+    ilog("Using shared memory lock at ${f}", ("f", dblock_shm_file));
     my->_dblock_mapped_region =
       bip::mapped_region(bip::file_mapping(dblock_shm_file.c_str(), bip::read_write),
-                         bip::read_write);
+                         bip::read_write,
+                         0, sizeof(chronicle::shmem_lock));
+
     void* dblock_addr = my->_dblock_mapped_region.get_address();
-    my->dblock = new (dblock_addr) chronicle::shmem_lock;
+    if (new_lock) {
+      my->dblock = new (dblock_addr) chronicle::shmem_lock;
+    }
+    else {
+      my->dblock = static_cast<chronicle::shmem_lock*>(dblock_addr);
+    }
 
     {
       bip::scoped_lock<bip::interprocess_mutex> lock(my->dblock->mutex);
-      
       if (my->interactive_mode) {
         my->db = std::make_shared<chainbase::database>(dbdir, chainbase::database::read_only, 0, true);
       }
@@ -1336,7 +1351,7 @@ void receiver_plugin::slowdown(bool pause) {
 
 
 abieos_context* receiver_plugin::get_contract_abi_ctxt(abieos::name account) {
-  my->get_contract_abi_ready(account);
+  my->get_contract_abi_ready(account, true);
   return my->contract_abi_ctxt;
 }
 
