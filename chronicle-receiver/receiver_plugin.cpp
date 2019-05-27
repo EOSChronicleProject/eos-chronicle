@@ -644,6 +644,12 @@ public:
       }
 
       if( block_num > last_irreversible_num ) {
+        if (block_num < irreversible) {
+          elog("Received block number (${b}) that is lower than last seen irreversible (${i})",
+               ("b", block_num)("i", irreversible));
+          throw runtime_error("Received block number that is lower than last seen irreversible");
+        }
+          
         // we're at the blockchain head
         if (block_num <= head) { //received a block that is lower than what we already saw
           ilog("fork detected at block ${b}; head=${h}", ("b",block_num)("h",head));
