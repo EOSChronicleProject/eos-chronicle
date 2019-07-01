@@ -67,7 +67,7 @@ namespace chronicle {
       uint32_t                                   block_num;
       abieos::block_timestamp                    block_timestamp;
       state_history::table_delta_v0              table_delta;
-      std::shared_ptr<std::vector<char>>         buffer;
+      std::shared_ptr<flat_buffer>               buffer;
     };
 
     template <typename F>
@@ -84,7 +84,7 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       state_history::transaction_trace         trace;
-      std::shared_ptr<std::vector<char>>       buffer;
+      std::shared_ptr<flat_buffer>             buffer;
     };
 
     template <typename F>
@@ -152,7 +152,7 @@ namespace chronicle {
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
       chain_state::key_value_object            kvo;
-      std::shared_ptr<std::vector<char>>       buffer;
+      std::shared_ptr<flat_buffer>             buffer;
     };
 
     template <typename F>

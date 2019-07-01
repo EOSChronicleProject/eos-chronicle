@@ -13,7 +13,6 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/iostreams/device/back_inserter.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/program_options.hpp>
 #include <boost/asio/signal_set.hpp>
@@ -215,17 +214,6 @@ CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_history, chronicle::contract_abi_hist_index)
-
-
-std::shared_ptr<std::vector<char>> zlib_decompress(input_buffer data) {
-  std::shared_ptr<std::vector<char>> out = std::make_shared<std::vector<char>>();
-  bio::filtering_ostream decomp;
-  decomp.push(bio::zlib_decompressor());
-  decomp.push(bio::back_inserter(*out));
-  bio::write(decomp, data.pos, data.end - data.pos);
-  bio::close(decomp);
-  return out;
-}
 
 
 
@@ -789,10 +777,7 @@ public:
 
 
 
-  void receive_deltas(input_buffer buf, const shared_ptr<flat_buffer>& p) {
-    auto         data = zlib_decompress(buf);
-    input_buffer bin{data->data(), data->data() + data->size()};
-
+  void receive_deltas(input_buffer bin, const shared_ptr<flat_buffer>& p) {
     uint32_t num;
     string error;
     if( !read_varuint32(bin, error, num) )
@@ -802,7 +787,7 @@ public:
 
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
       bltd->block_timestamp = block_timestamp;
-      bltd->buffer = data;
+      bltd->buffer = p;
         
       string error;
       if (!bin_to_native(bltd->table_delta, error, bin))
@@ -841,7 +826,7 @@ public:
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             tru->block_num = head;
             tru->block_timestamp = block_timestamp;
-            tru->buffer = data;
+            tru->buffer = p;
             
             string error;
             if (!bin_to_native(tru->kvo, error, row.data))
@@ -1024,17 +1009,15 @@ public:
   }
 
 
-  void receive_traces(input_buffer buf, const shared_ptr<flat_buffer>& p) {
+  void receive_traces(input_buffer bin, const shared_ptr<flat_buffer>& p) {
     if (_transaction_traces_chan.has_subscribers()) {
-      auto         data = zlib_decompress(buf);
-      input_buffer bin{data->data(), data->data() + data->size()};
       uint32_t num;
       string       error;
       if( !read_varuint32(bin, error, num) )
         throw runtime_error(error);
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
-        tr->buffer = data;
+        tr->buffer = p;
         if (!bin_to_native(tr->trace, error, bin))
           throw runtime_error("transaction_trace conversion error: " + error);
         // check blacklist
@@ -1255,7 +1238,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 
     my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
     my->stream->binary(true);
-    my->stream->read_message_max(1024 * 1024 * 1024);
+    my->stream->read_message_max(10ull * 1ull<<30);
 
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();
