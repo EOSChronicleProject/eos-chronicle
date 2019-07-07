@@ -36,7 +36,6 @@ add_subdirectory(external/fc)
 add_executable(chronicle-receiver
   external/abieos/src/abieos.cpp
   chronicle-receiver/main.cpp
-  chronicle-receiver/chain_state_types.cpp
   chronicle-receiver/receiver_plugin.cpp
   chronicle-receiver/decoder_plugin.cpp
   chronicle-receiver/exp_ws_plugin.cpp

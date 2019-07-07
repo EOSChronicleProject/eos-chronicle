@@ -13,7 +13,6 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/iostreams/device/back_inserter.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/program_options.hpp>
 #include <boost/asio/signal_set.hpp>
@@ -38,7 +37,9 @@
 using namespace abieos;
 using namespace appbase;
 using namespace std::literals;
+
 using namespace chain_state;
+using namespace state_history;
 
 using std::enable_shared_from_this;
 using std::exception;
@@ -213,17 +214,6 @@ CHAINBASE_SET_INDEX_TYPE(chronicle::state_object, chronicle::state_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::received_block_object, chronicle::received_block_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_object, chronicle::contract_abi_index)
 CHAINBASE_SET_INDEX_TYPE(chronicle::contract_abi_history, chronicle::contract_abi_hist_index)
-
-
-std::vector<char> zlib_decompress(input_buffer data) {
-  std::vector<char>      out;
-  bio::filtering_ostream decomp;
-  decomp.push(bio::zlib_decompressor());
-  decomp.push(bio::back_inserter(out));
-  bio::write(decomp, data.pos, data.end - data.pos);
-  bio::close(decomp);
-  return out;
-}
 
 
 
@@ -503,7 +493,7 @@ public:
     return true;
   }
 
-  void receive_abi(const shared_ptr<flat_buffer>& p) {
+  void receive_abi(const shared_ptr<flat_buffer> p) {
     auto data = p->data();
     std::string error;
     abi_def abi{};
@@ -608,7 +598,7 @@ public:
   }
 
 
-  bool receive_result(const shared_ptr<flat_buffer>& p) {
+  bool receive_result(const shared_ptr<flat_buffer> p) {
     auto         data = p->data();
     input_buffer bin{(const char*)data.data(), (const char*)data.data() + data.size()};
     check_variant(bin, get_type("result"), "get_blocks_result_v0");
@@ -684,7 +674,7 @@ public:
     irreversible_id = result.last_irreversible.block_id;
 
     if (result.block)
-      receive_block(*result.block);
+      receive_block(*result.block, p);
 
     // state changing activities
     if (!interactive_mode) {
@@ -707,7 +697,7 @@ public:
         }
         
         if (result.deltas)
-          receive_deltas(*result.deltas);
+          receive_deltas(*result.deltas, p);
         
         save_state();
         undo_session.push();     // save a new revision
@@ -715,11 +705,11 @@ public:
     }
     else {
       if (result.deltas)
-        receive_deltas(*result.deltas);
+        receive_deltas(*result.deltas, p);
     }
       
     if (result.traces)
-      receive_traces(*result.traces);
+      receive_traces(*result.traces, p);
 
     auto bf = std::make_shared<chronicle::channels::block_finished>();
     bf->block_num = head;
@@ -766,7 +756,7 @@ public:
   }
 
 
-  void receive_block(input_buffer bin) {
+  void receive_block(input_buffer bin, const shared_ptr<flat_buffer>& p) {
     if (head == irreversible) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
@@ -774,6 +764,7 @@ public:
     auto block_ptr = std::make_shared<chronicle::channels::block>();
     block_ptr->block_num = head;
     block_ptr->last_irreversible = irreversible;
+    block_ptr->buffer = p;
 
     string error;
     if (!bin_to_native(block_ptr->block, error, bin))
@@ -786,10 +777,7 @@ public:
 
 
 
-  void receive_deltas(input_buffer buf) {
-    auto         data = zlib_decompress(buf);
-    input_buffer bin{data.data(), data.data() + data.size()};
-
+  void receive_deltas(input_buffer bin, const shared_ptr<flat_buffer>& p) {
     uint32_t num;
     string error;
     if( !read_varuint32(bin, error, num) )
@@ -799,7 +787,8 @@ public:
 
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
       bltd->block_timestamp = block_timestamp;
-
+      bltd->buffer = p;
+        
       string error;
       if (!bin_to_native(bltd->table_delta, error, bin))
         throw runtime_error("table_delta conversion error: " + error);
@@ -837,7 +826,8 @@ public:
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             tru->block_num = head;
             tru->block_timestamp = block_timestamp;
-
+            tru->buffer = p;
+            
             string error;
             if (!bin_to_native(tru->kvo, error, row.data))
               throw runtime_error("cannot read table row object" + error);
@@ -1019,25 +1009,25 @@ public:
   }
 
 
-  void receive_traces(input_buffer buf) {
+  void receive_traces(input_buffer bin, const shared_ptr<flat_buffer>& p) {
     if (_transaction_traces_chan.has_subscribers()) {
-      auto         data = zlib_decompress(buf);
-      input_buffer bin{data.data(), data.data() + data.size()};
       uint32_t num;
       string       error;
       if( !read_varuint32(bin, error, num) )
         throw runtime_error(error);
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
+        tr->buffer = p;
         if (!bin_to_native(tr->trace, error, bin))
           throw runtime_error("transaction_trace conversion error: " + error);
         // check blacklist
         bool blacklisted = false;
-        if( tr->trace.traces.size() > 0 ) {
-          auto &at = tr->trace.traces[0];
-          auto search_acc = blacklist_actions.find(at.account);
+        auto& trace = std::get<state_history::transaction_trace_v0>(tr->trace);
+        if( trace.action_traces.size() > 0 ) {
+          auto &at = std::get<state_history::action_trace_v0>(trace.action_traces[0]);
+          auto search_acc = blacklist_actions.find(at.receiver);
           if(search_acc != blacklist_actions.end()) {
-            if( search_acc->second.count(at.name) != 0 ) {
+            if( search_acc->second.count(at.act.name) != 0 ) {
               blacklisted = true;
             }
           }
@@ -1248,7 +1238,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 
     my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
     my->stream->binary(true);
-    my->stream->read_message_max(1024 * 1024 * 1024);
+    my->stream->read_message_max(10ull * 1ull<<30);
 
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();

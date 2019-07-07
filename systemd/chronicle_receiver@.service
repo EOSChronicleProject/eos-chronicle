@@ -1,0 +1,15 @@
+[Unit]
+Description=Chronicle receiver
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/chronicle-receiver --config-dir=/srv/%i/chronicle-config --data-dir=/srv/%i/chronicle-data
+TimeoutStopSec=300s
+Restart=on-success
+RestartSec=10
+User=root
+Group=daemon
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+

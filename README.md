@@ -182,7 +182,7 @@ sudo apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test
 
 mkdir build
 cd build
-git clone https://github.com/EOSChronicleProject/eos-chronicle.git
+git clone -b nodeos0108 https://github.com/EOSChronicleProject/eos-chronicle.git
 cd eos-chronicle
 git submodule update --init --recursive
 mkdir build
@@ -194,6 +194,29 @@ make
 
 `examples/exp-dummy-plugin` explains how to add and compile your own plugin to `chronicle-receiver`.
 
+
+
+# State history
+
+Chronicle release 1.7 is compatible with nodeos 1.7, and newer Chronicle
+versions are only compatible with nodeos 1.8 or higher.
+
+In order for Chronicle to function properly, both `trace-history` and
+`chain-state-history` need to be enabled. Also if contract console
+output needs to be present in Chronicle output,
+`trace-history-debug-mode` needs to be enabled too.
+
+Example `config.ini` for nodeos 1.8:
+
+```
+contracts-console = true
+validation-mode = light
+plugin = eosio::state_history_plugin
+trace-history = true
+chain-state-history = true
+trace-history-debug-mode = true
+state-history-endpoint = 0.0.0.0:8080
+```
 
 
 # Configuring and running
@@ -398,7 +421,19 @@ those changes.
 * New options: `irreversible-only`, `end-block`.
 
 
-# Thirt-party software
+## Pre-release 1.2
+
+This release will support nodeos-1.8, and will not be compatible with
+nodeos-1.7. It's not compatible with 1.8-rc1 either, as there is a
+difference in state history data format. You need to compile nodeos from
+"release/1.8.x" branch.
+
+Sample output, gzipped, is available at
+https://cloudflare-ipfs.com/ipfs/QmQuYhmEwphoGC6ucXmBSmecfsm3ZbjLdUmSQdkfsh4uAw
+
+
+
+# Third-party software
 
 * Docker file provided by EOS Tribe:
   https://github.com/EOSTribe/eos-chronicle-docker
