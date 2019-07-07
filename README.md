@@ -12,6 +12,24 @@ processing. `chronicle-receiver` is implementing this as described
 below.
 
 
+# Git branches
+
+`master` branch of Chronicle is compatible with current release of EOSIO
+`nodeos` (currently 1.8.0 release).
+
+`nodeos-1.8rc2` branch of Chronicle is only compatible with the release
+candidate (nodeos 1.8rc2) because th efinal release has different output
+format of state history.
+
+`nodeos-1.7` branch of Chronicle is compatible with `nodeos` releases
+prior to 1.8rc2 (all revisions of 1.7 and 1.6 releases should work with
+this version).
+
+The branch `nodeos-1.8rc2` is frozen and is not supposed to be
+updated. Critical updates will be added to `master` and `nodeos-1.7`
+branches.
+
+
 # chronicle-receiver
 
 The receiver is designed to work with `state_history_plugin` of
@@ -45,8 +63,6 @@ stop and close its downstream connection. Also if the downstream
 connection closes, the receiver will stop itself and close the
 connection to `nodeos`.
 
-Chronicle receiver version 1.1 is compatible with `nodeos` versions
-prior to 1.8.
 
 
 ## Scanning mode
@@ -198,15 +214,12 @@ make
 
 # State history
 
-Chronicle release 1.7 is compatible with nodeos 1.7, and newer Chronicle
-versions are only compatible with nodeos 1.8 or higher.
-
 In order for Chronicle to function properly, both `trace-history` and
 `chain-state-history` need to be enabled. Also if contract console
 output needs to be present in Chronicle output,
 `trace-history-debug-mode` needs to be enabled too.
 
-Example `config.ini` for nodeos 1.8:
+Example `config.ini` for nodeos version 1.8:
 
 ```
 contracts-console = true
