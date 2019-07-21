@@ -85,4 +85,5 @@ endforeach()
 
 
 ## Installables
+set_target_properties(chronicle-receiver PROPERTIES SUFFIX "-1.7")
 install(TARGETS chronicle-receiver RUNTIME DESTINATION sbin)
