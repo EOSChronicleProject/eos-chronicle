@@ -767,7 +767,7 @@ public:
 
 
   void receive_block(input_buffer bin) {
-    if (head == irreversible) {
+    if (head == irreversible && !irreversible_only) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
 
