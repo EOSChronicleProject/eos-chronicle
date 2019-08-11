@@ -757,7 +757,7 @@ public:
 
 
   void receive_block(input_buffer bin, const shared_ptr<flat_buffer>& p) {
-    if (head == irreversible) {
+    if (head == irreversible && !irreversible_only) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
 
