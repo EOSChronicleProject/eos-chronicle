@@ -80,6 +80,7 @@ namespace {
   const char* RCV_MAX_QUEUE_OPT = "max-queue-size";
   const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
   const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
+  const char* RCV_SKIP_TRACES_OPT = "skip-traces";
   const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
   const char* RCV_END_BLOCK_OPT = "end-block";
 
@@ -268,6 +269,7 @@ public:
   bool                                  noexport_mode;
   bool                                  skip_block_events;
   bool                                  skip_table_deltas;
+  bool                                  skip_traces;
   bool                                  irreversible_only;
   uint32_t                              end_block_num;
 
@@ -537,7 +539,7 @@ public:
     ilog("Start block: ${b}", ("b",start_block));
 
     bool fetch_block = noexport_mode ? false:true;
-    bool fetch_traces = noexport_mode ? false:true;
+    bool fetch_traces = (skip_traces || noexport_mode) ? false:true;
     bool fetch_deltas = true;
     send_request(jvalue{jarray{{"get_blocks_request_v0"s},
             {jobject{
@@ -589,7 +591,7 @@ public:
       init_contract_abi_ctxt();
       dlog("Requesting blocks ${s} to ${e}", ("s", block_req_str)("e",end_block_str));
       bool fetch_block = true;
-      bool fetch_traces = true;
+      bool fetch_traces = skip_traces ? false:true;
       bool fetch_deltas = skip_table_deltas ? false:true;
       interactive_req_pending = true;
       send_request(jvalue{jarray{{"get_blocks_request_v0"s},
@@ -1165,6 +1167,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_MAX_QUEUE_OPT, bpo::value<uint32_t>()->default_value(10000), "Maximum size of appbase priority queue")
     (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
     (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
+    (RCV_SKIP_TRACES_OPT, bpo::value<bool>()->default_value(false), "Do not produce transaction trace events")
     (RCV_IRREV_ONLY_OPT, bpo::value<bool>()->default_value(false), "Fetch only irreversible blocks")
     (RCV_END_BLOCK_OPT, bpo::value<uint32_t>()->default_value(std::numeric_limits<uint32_t>::max()),
      "Stop receiver before this block number")
@@ -1263,6 +1266,10 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     if( my->skip_table_deltas )
       ilog("Skipping table delta events");
 
+    my->skip_traces = options.at(RCV_SKIP_TRACES_OPT).as<bool>();
+    if( my->skip_traces )
+      ilog("Skipping transaction trace events");
+    
     if( my->irreversible_only )
       ilog("Fetching irreversible blocks only");
 
