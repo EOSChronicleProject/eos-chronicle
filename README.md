@@ -368,6 +368,9 @@ The following options are available from command line and `config.ini`:
 * `skip-table-deltas = true|false` (=`false`) Disable table delta events
   in the export.
 
+* `skip-traces = true|false` (=`false`) Disable transaction trace events
+  in the export.
+
 * `irreversible-only = true|false` (=`false`) fetch irreversible blocks
 only
 
