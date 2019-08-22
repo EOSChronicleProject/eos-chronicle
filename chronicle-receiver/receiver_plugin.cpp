@@ -82,6 +82,7 @@ namespace {
   const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
   const char* RCV_SKIP_TRACES_OPT = "skip-traces";
   const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
+  const char* RCV_START_BLOCK_OPT = "start-block";
   const char* RCV_END_BLOCK_OPT = "end-block";
 
   const char* RCV_MODE_SCAN = "scan";
@@ -271,6 +272,7 @@ public:
   bool                                  skip_table_deltas;
   bool                                  skip_traces;
   bool                                  irreversible_only;
+  uint32_t                              start_block_num;
   uint32_t                              end_block_num;
 
 
@@ -371,11 +373,24 @@ public:
       head_id = itr->head_id;
       irreversible = itr->irreversible;
       irreversible_id = itr->irreversible_id;
+
+      if( start_block_num > 0 ) {
+        string errmsg = string("start-block can only be specified for initial startup. ") +
+          "This Chronicle instance has its state database already";
+        elog(errmsg);
+        throw runtime_error(errmsg);
+      }
     }
     else {
-      ilog("Re-scanning the state history from genesis. Issuing an explicit fork event");
+      if( start_block_num > 0 ) {
+        head = start_block_num - 1;
+        ilog("Re-scanning the state history from block ${b}", ("b",start_block_num));
+      } else {
+        ilog("Re-scanning the state history from genesis");
+      }
+      ilog("Issuing an explicit fork event");
       auto fe = std::make_shared<chronicle::channels::fork_event>();
-      fe->fork_block_num = 1;
+      fe->fork_block_num = head+1;
       fe->depth = 0;
       fe->fork_reason = chronicle::channels::fork_reason_val::resync;
       fe->last_irreversible = 0;
@@ -1169,6 +1184,8 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
     (RCV_SKIP_TRACES_OPT, bpo::value<bool>()->default_value(false), "Do not produce transaction trace events")
     (RCV_IRREV_ONLY_OPT, bpo::value<bool>()->default_value(false), "Fetch only irreversible blocks")
+    (RCV_START_BLOCK_OPT, bpo::value<uint32_t>()->default_value(0),
+     "Start from a snapshot block instead of genesis")
     (RCV_END_BLOCK_OPT, bpo::value<uint32_t>()->default_value(std::numeric_limits<uint32_t>::max()),
      "Stop receiver before this block number")
     ;
@@ -1272,6 +1289,11 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     
     if( my->irreversible_only )
       ilog("Fetching irreversible blocks only");
+
+    my->start_block_num = options.at(RCV_START_BLOCK_OPT).as<uint32_t>();
+    if( my->interactive_mode and my->start_block_num > 0 ) {
+      throw std::runtime_error("cannot use start-block in interactive mode");
+    }
 
     my->end_block_num = options.at(RCV_END_BLOCK_OPT).as<uint32_t>();
 

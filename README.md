@@ -338,6 +338,13 @@ The following options are available from command line and `config.ini`:
 * `irreversible-only = true|false` (=`false`) fetch irreversible blocks
 only
 
+* `start-block = N` (=`0`) Initialize Chronicle state from given
+  block. This is intended for starting Chronicle off a node that started
+  from a portable snapshot. The snapshot has all table contents in in
+  the beginning, so Chronicle will process them all before continuing
+  with the blocks. It may take some significant time. This option is
+  only allowed when Chronicle data directory is empty.
+
 * `end-block = N` (=`4294967295`)  Stop receiver before this block number
 
 
