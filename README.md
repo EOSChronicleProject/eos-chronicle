@@ -354,6 +354,8 @@ Options for `exp_ws_plugin`:
 
 * `exp-ws-port = PORT` (mandatory): Websocket server port to connect to;
 
+* `exp-ws-path = PATH` (/): Websocket server URL path;
+
 * `exp-ws-bin-header = true|false` (=`false`) Enable binary header mode
   (message type and options as binary integers, followed by JSON);
 

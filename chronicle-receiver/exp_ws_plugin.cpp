@@ -28,6 +28,7 @@ static appbase::abstract_plugin& _exp_ws_plugin = app().register_plugin<exp_ws_p
 namespace {
   const char* WS_HOST_OPT = "exp-ws-host";
   const char* WS_PORT_OPT = "exp-ws-port";
+  const char* WS_PATH_OPT = "exp-ws-path";
   const char* WS_MAXUNACK_OPT = "exp-ws-max-unack";
   const char* WS_MAXQUEUE_OPT = "exp-ws-max-queue";
   const char* WS_BINHDR = "exp-ws-bin-header";
@@ -50,6 +51,7 @@ public:
   
   string ws_host;
   string ws_port;
+  string ws_path;
   bool use_bin_headers;
   uint32_t maxunack;
   
@@ -176,7 +178,7 @@ public:
     ws->binary(true);
     ws->auto_fragment(true);
     boost::asio::connect(ws->next_layer(), results.begin(), results.end());
-    ws->handshake(ws_host, "/");
+    ws->handshake(ws_host, ws_path);
     ilog("Connected");
     if (is_interactive_mode()) {
       async_read_interactive_reqs();
@@ -377,6 +379,7 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
   cfg.add_options()
     (WS_HOST_OPT, bpo::value<string>(), "Websocket server host to connect to")
     (WS_PORT_OPT, bpo::value<string>(), "Websocket server port to connect to")
+    (WS_PATH_OPT, bpo::value<string>()->default_value("/"), "Websocket server URL path")
     (WS_MAXUNACK_OPT, bpo::value<uint32_t>()->default_value(1000),
      "Receiver will pause at so many unacknowledged blocks")
     (WS_MAXQUEUE_OPT, bpo::value<uint32_t>()->default_value(10000),
@@ -409,6 +412,7 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
 
     my->ws_host = options.at(WS_HOST_OPT).as<string>();
     my->ws_port = options.at(WS_PORT_OPT).as<string>();
+    my->ws_path = options.at(WS_PATH_OPT).as<string>();
 
     my->maxunack = options.at(WS_MAXUNACK_OPT).as<uint32_t>();
     if( my->maxunack == 0 )
