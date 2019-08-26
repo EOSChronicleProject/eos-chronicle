@@ -680,7 +680,8 @@ public:
           _forks_chan.publish(channel_priority, fe);
         }
         else
-          if (head > 0 && (!result.prev_block || result.prev_block->block_id.value != head_id.value))
+          if (head > 0 && head > start_block_num &&
+              (!result.prev_block || result.prev_block->block_id.value != head_id.value))
             throw runtime_error("prev_block does not match");
       }
     }
