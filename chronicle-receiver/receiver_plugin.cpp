@@ -680,7 +680,7 @@ public:
           }
 
           if( exporter_will_ack && exporter_acked_block > block_num )
-            exporter_acked_block = block_num;
+            exporter_acked_block = block_num - 1;
 
           auto fe = std::make_shared<chronicle::channels::fork_event>();
           fe->fork_block_num = block_num;
@@ -1375,7 +1375,7 @@ void receiver_plugin::ack_block(uint32_t block_num) {
   if( block_num < my->exporter_acked_block ) {
     elog("Exporter acked block=${a}, but block=${k} was already acknowledged",
          ("a",block_num)("k",my->exporter_acked_block));
-    throw runtime_error("Exporter acked block below prevuously acked one");
+    throw runtime_error("Exporter acked block below previuously acked one");
   }
   my->exporter_acked_block = block_num;
   //dlog("Acked block=${b}", ("b",block_num));
