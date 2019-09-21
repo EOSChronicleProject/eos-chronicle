@@ -679,7 +679,7 @@ public:
                                 std::to_string(db->revision()));
           }
 
-          if( exporter_will_ack && exporter_acked_block > block_num )
+          if( exporter_will_ack && exporter_acked_block > block_num - 1 )
             exporter_acked_block = block_num - 1;
 
           auto fe = std::make_shared<chronicle::channels::fork_event>();
