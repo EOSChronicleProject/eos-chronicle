@@ -85,6 +85,7 @@ namespace {
   const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
   const char* RCV_START_BLOCK_OPT = "start-block";
   const char* RCV_END_BLOCK_OPT = "end-block";
+  const char* RCV_STALE_DEADLINE_OPT = "stale-deadline";
 
   const char* RCV_MODE_SCAN = "scan";
   const char* RCV_MODE_SCAN_NOEXP = "scan-noexport";
@@ -234,7 +235,8 @@ public:
     _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>()),
     _receiver_pauses_chan(app().get_channel<chronicle::channels::receiver_pauses>()),
     _block_completed_chan(app().get_channel<chronicle::channels::block_completed>()),
-    mytimer(std::ref(app().get_io_service()))
+    pause_timer(std::ref(app().get_io_service())),
+    stale_check_timer(std::ref(app().get_io_service()))
   {};
 
   shared_ptr<chainbase::database>       db;
@@ -298,10 +300,14 @@ public:
   bool                                  exporter_will_ack = false;
   uint32_t                              exporter_acked_block = 0;
   uint32_t                              exporter_max_unconfirmed;
-  boost::asio::deadline_timer           mytimer;
+  boost::asio::deadline_timer           pause_timer;
   uint32_t                              pause_time_msec = 0;
   bool                                  slowdown_requested = false;
 
+  boost::asio::deadline_timer           stale_check_timer;
+  uint32_t                              stale_check_last_head;
+  uint32_t                              stale_check_deadline_msec;
+  
 
   void init() {
     if (interactive_mode) {
@@ -448,6 +454,17 @@ public:
                continue_read();
              });
          }));
+    
+    stale_check_last_head = head;
+    stale_check_timer.expires_from_now(boost::posix_time::milliseconds(stale_check_deadline_msec));
+    stale_check_timer.async_wait
+      (app().get_priority_queue().wrap
+       (stream_priority,
+        [this](const error_code ec) {
+          callback(ec, "async_wait", [&] {
+                                       check_stale_head();
+                                     });
+        }));
   }
 
 
@@ -498,8 +515,8 @@ public:
         ilog("Pausing the reader");
       }
 
-      mytimer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
-      mytimer.async_wait
+      pause_timer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
+      pause_timer.async_wait
         (app().get_priority_queue().wrap(stream_priority, [this](const error_code ec) {
             callback(ec, "async_wait", [&] {
                 continue_read();
@@ -510,6 +527,26 @@ public:
     return true;
   }
 
+  void check_stale_head() {
+    if( stale_check_last_head == head && pause_time_msec == 0 ) {
+      elog("Did not receive anything in ${d} milliseconds. Aborting the receiver", ("d", stale_check_deadline_msec));
+      abort_receiver();
+    }
+    else {
+      stale_check_last_head = head;
+      stale_check_timer.expires_from_now(boost::posix_time::milliseconds(stale_check_deadline_msec));
+      stale_check_timer.async_wait
+        (app().get_priority_queue().wrap
+         (stream_priority,
+          [this](const error_code ec) {
+            callback(ec, "async_wait", [&] {
+                                         check_stale_head();
+                                       });
+          }));
+    }
+  }
+    
+  
   void receive_abi(const shared_ptr<flat_buffer> p) {
     auto data = p->data();
     std::string error;
@@ -1179,6 +1216,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
      "Start from a snapshot block instead of genesis")
     (RCV_END_BLOCK_OPT, bpo::value<uint32_t>()->default_value(std::numeric_limits<uint32_t>::max()),
      "Stop receiver before this block number")
+    (RCV_STALE_DEADLINE_OPT, bpo::value<uint32_t>()->default_value(10000), "Stale socket deadline, msec")
     ;
 }
 
@@ -1288,6 +1326,8 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 
     my->end_block_num = options.at(RCV_END_BLOCK_OPT).as<uint32_t>();
 
+    my->stale_check_deadline_msec = options.at(RCV_STALE_DEADLINE_OPT).as<uint32_t>();
+    
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
                       std::set<abieos::name>{abieos::name("onblock")} ));
@@ -1317,8 +1357,8 @@ void receiver_plugin::start_after_dependencies() {
 
   if( mustwait ) {
     ilog("Waiting for dependent plugins");
-    my->mytimer.expires_from_now(boost::posix_time::milliseconds(50));
-    my->mytimer.async_wait(boost::bind(&receiver_plugin::start_after_dependencies, this));
+    my->pause_timer.expires_from_now(boost::posix_time::milliseconds(50));
+    my->pause_timer.async_wait(boost::bind(&receiver_plugin::start_after_dependencies, this));
   }
   else {
     ilog("All dependent plugins started, launching the receiver");
