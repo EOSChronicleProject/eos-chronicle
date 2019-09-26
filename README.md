@@ -347,6 +347,10 @@ only
 
 * `end-block = N` (=`4294967295`)  Stop receiver before this block number
 
+* `stale-deadline = N` (=`10000`) If there were no new blocks from
+  state history socket within this time (in milliseconds),
+  chronicle-receiver will stop and exit. The deadline timer is not
+  used if the receiver is paused by a slow consumer.
 
 Options for `exp_ws_plugin`:
 
