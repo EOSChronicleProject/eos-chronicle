@@ -414,7 +414,26 @@ those changes.
 * New options: `irreversible-only`, `end-block`.
 
 
+<<<<<<< HEAD
 # Thirt-party software
+=======
+## Pre-release 1.2
+
+This release will support nodeos-1.8, and will not be compatible with
+nodeos-1.7. It's not compatible with 1.8-rc1 either, as there is a
+difference in state history data format. You need to compile nodeos from
+"release/1.8.x" branch.
+
+Sample output, gzipped, is available at
+https://cloudflare-ipfs.com/ipfs/QmQuYhmEwphoGC6ucXmBSmecfsm3ZbjLdUmSQdkfsh4uAw
+
+New message types: 1011 and 1012 (PERMISSION and PERMISSION_LINK).
+
+
+
+
+# Third-party software
+>>>>>>> 6db19b2... New message types: 1011 and 1012 (PERMISSION and PERMISSION_LINK)
 
 * Docker file provided by EOS Tribe:
   https://github.com/EOSTribe/eos-chronicle-docker

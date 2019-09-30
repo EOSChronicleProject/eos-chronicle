@@ -11,13 +11,13 @@ namespace chronicle {
   namespace channels {
 
     using namespace abieos;
-    
+
     enum class fork_reason_val : uint8_t {
       network  = 1, // fork occurred in the EOSIO network
       restart = 2,  // explicit fork on receiver restart
       resync = 3,   // full resync from the genesis
     };
-    
+
     inline string to_string(fork_reason_val reason) {
       switch (reason) {
       case fork_reason_val::network: return "network";
@@ -26,14 +26,14 @@ namespace chronicle {
       }
       return "unknown";
     }
-    
+
     struct fork_event {
       uint32_t         fork_block_num;
       uint32_t         depth;
       fork_reason_val  fork_reason;
       uint32_t         last_irreversible;
     };
-    
+
     template <typename F>
     constexpr void for_each_field(fork_event*, F f) {
       f("block_num", member_ptr<&fork_event::fork_block_num>{});
@@ -41,7 +41,7 @@ namespace chronicle {
       f("fork_reason", member_ptr<&fork_event::fork_reason>{});
       f("last_irreversible", member_ptr<&fork_event::last_irreversible>{});
     }
-    
+
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
 
     struct block {
@@ -56,7 +56,7 @@ namespace chronicle {
       f("last_irreversible", member_ptr<&block::last_irreversible>{});
       f("block", member_ptr<&block::block>{});
     }
-    
+
     using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<block>>;
 
     struct block_table_delta {
@@ -71,9 +71,9 @@ namespace chronicle {
       f("block_timestamp", member_ptr<&block_table_delta::block_timestamp>{});
       f("table_delta", member_ptr<&block_table_delta::table_delta>{});
     }
-    
+
     using block_table_deltas  =
-      channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;    
+      channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;
 
     struct transaction_trace {
       uint32_t                        block_num;
@@ -87,7 +87,7 @@ namespace chronicle {
       f("block_timestamp", member_ptr<&transaction_trace::block_timestamp>{});
       f("trace", member_ptr<&transaction_trace::trace>{});
     }
-    
+
     using transaction_traces = channel_decl<struct transaction_traces_tag, std::shared_ptr<transaction_trace>>;
 
     struct abi_update {
@@ -106,7 +106,7 @@ namespace chronicle {
       f("abi_bytes", member_ptr<&abi_update::abi_bytes>{});
       f("abi", member_ptr<&abi_update::abi>{});
     }
-    
+
     using abi_updates = channel_decl<struct abi_updates_tag, std::shared_ptr<abi_update>>;
 
     struct abi_removal {
@@ -128,7 +128,7 @@ namespace chronicle {
       uint32_t                        block_num;
       abieos::block_timestamp         block_timestamp;
       abieos::name                    account;
-      string                          error; 
+      string                          error;
     };
 
     template <typename F>
@@ -138,7 +138,7 @@ namespace chronicle {
       f("account", member_ptr<&abi_error::account>{});
       f("error", member_ptr<&abi_error::error>{});
     }
-    
+
     using abi_errors = channel_decl<struct abi_errors_tag, std::shared_ptr<abi_error>>;
 
     struct table_row_update {
@@ -155,8 +155,45 @@ namespace chronicle {
       f("added", member_ptr<&table_row_update::added>{});
       f("kvo", member_ptr<&table_row_update::kvo>{});
     }
-    
+
     using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
+
+    struct permission_update {
+      uint32_t                                 block_num;
+      abieos::block_timestamp                  block_timestamp;
+      bool                                     added; // false==removed
+      chain_state::permission_object           permission;
+    };
+
+    template <typename F>
+    constexpr void for_each_field(permission_update*, F f) {
+      f("block_num", member_ptr<&permission_update::block_num>{});
+      f("block_timestamp", member_ptr<&permission_update::block_timestamp>{});
+      f("added", member_ptr<&permission_update::added>{});
+      f("permission", member_ptr<&permission_update::permission>{});
+    }
+
+    using permission_updates = channel_decl<struct permission_updates_tag, std::shared_ptr<permission_update>>;
+
+
+    struct permission_link_update {
+      uint32_t                                 block_num;
+      abieos::block_timestamp                  block_timestamp;
+      bool                                     added; // false==removed
+      chain_state::permission_link_object      permission_link;
+    };
+
+    template <typename F>
+    constexpr void for_each_field(permission_link_update*, F f) {
+      f("block_num", member_ptr<&permission_link_update::block_num>{});
+      f("block_timestamp", member_ptr<&permission_link_update::block_timestamp>{});
+      f("added", member_ptr<&permission_link_update::added>{});
+      f("permission_link", member_ptr<&permission_link_update::permission_link>{});
+    }
+
+    using permission_link_updates =
+      channel_decl<struct permission_link_updates_tag, std::shared_ptr<permission_link_update>>;
+
 
     struct receiver_pause {
       uint32_t                           head;
@@ -168,7 +205,7 @@ namespace chronicle {
       f("head", member_ptr<&receiver_pause::head>{});
       f("acknowledged", member_ptr<&receiver_pause::acknowledged>{});
     }
-    
+
     using receiver_pauses = channel_decl<struct receiver_pauses_tag, std::shared_ptr<receiver_pause>>;
 
     struct block_finished {
@@ -190,11 +227,11 @@ namespace chronicle {
       uint32_t                        block_num_start;
       uint32_t                        block_num_end;
     };
-    
+
     using interactive_requests = channel_decl<struct interactive_requests_tag, std::shared_ptr<interactive_request>>;
   }
 }
-  
+
 
 class receiver_plugin : public appbase::plugin<receiver_plugin>
 {
@@ -202,7 +239,7 @@ public:
   APPBASE_PLUGIN_REQUIRES();
   receiver_plugin();
   virtual ~receiver_plugin();
-  virtual void set_program_options(options_description& cli, options_description& cfg) override;  
+  virtual void set_program_options(options_description& cli, options_description& cfg) override;
   void plugin_initialize(const variables_map& options);
   void plugin_startup();
   void plugin_shutdown();
@@ -211,7 +248,7 @@ public:
   void request_block(uint32_t block_num);
 
   bool is_noexport();
-  
+
   void exporter_will_ack_blocks(uint32_t max_unconfirmed);
   void ack_block(uint32_t block_num);
   void slowdown(bool pause);
