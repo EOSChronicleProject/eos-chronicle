@@ -460,6 +460,9 @@ difference in state history data format. You need to compile nodeos from
 Sample output, gzipped, is available at
 https://cloudflare-ipfs.com/ipfs/QmQuYhmEwphoGC6ucXmBSmecfsm3ZbjLdUmSQdkfsh4uAw
 
+New message types: 1011 and 1012 (PERMISSION and PERMISSION_LINK).
+
+
 
 
 # Third-party software

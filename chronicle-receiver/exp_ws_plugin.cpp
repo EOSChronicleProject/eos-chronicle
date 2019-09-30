@@ -10,7 +10,7 @@
 #include <boost/beast/core.hpp>
 #include <stdexcept>
 #include <limits>
-	
+
 #include "rapidjson/reader.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
@@ -43,18 +43,20 @@ public:
   chronicle::channels::js_abi_removals::channel_type::handle        _js_abi_removals_subscription;
   chronicle::channels::js_abi_errors::channel_type::handle          _js_abi_errors_subscription;
   chronicle::channels::js_table_row_updates::channel_type::handle   _js_table_row_updates_subscription;
+  chronicle::channels::js_permission_updates::channel_type::handle  _js_permission_updates_subscription;
+  chronicle::channels::js_permission_link_updates::channel_type::handle  _js_permission_link_updates_subscription;
   chronicle::channels::js_receiver_pauses::channel_type::handle     _js_receiver_pauses_subscription;
   chronicle::channels::js_block_completed::channel_type::handle     _js_block_completed_subscription;
   chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
 
   chronicle::channels::interactive_requests::channel_type&          _interactive_requests_chan;
-  
+
   string ws_host;
   string ws_port;
   string ws_path;
   bool use_bin_headers;
   uint32_t maxunack;
-  
+
   using wstream = boost::beast::websocket::stream<boost::asio::ip::tcp::socket>;
   std::shared_ptr<wstream> ws;
   const int ws_priority = 60;
@@ -69,7 +71,7 @@ public:
   uint32_t queue_lwm;
   boost::asio::const_buffer async_out_buffer;
   std::shared_ptr<boost::asio::deadline_timer> mytimer;
-  
+
   uint32_t pause_time_msec = 0;
   uint32_t msg_report_counter = 1000;
 
@@ -85,11 +87,11 @@ public:
       _js_forks_subscription =
         app().get_channel<chronicle::channels::js_forks>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_FORK, 0, event); });
-      
+
       _js_blocks_subscription =
         app().get_channel<chronicle::channels::js_blocks>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_BLOCK, 0, event); });
-    
+
       _js_transaction_traces_subscription =
         app().get_channel<chronicle::channels::js_transaction_traces>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_TX_TRACE, 0, event); });
@@ -97,7 +99,7 @@ public:
       _js_abi_updates_subscription =
         app().get_channel<chronicle::channels::js_abi_updates>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ABI_UPD, 0, event); });
-    
+
       _js_abi_removals_subscription =
         app().get_channel<chronicle::channels::js_abi_removals>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ABI_REM, 0, event); });
@@ -110,17 +112,25 @@ public:
         app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_TBL_ROW, 0, event); });
 
+      _js_permission_updates_subscription =
+        app().get_channel<chronicle::channels::js_permission_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_PERMISSION, 0, event); });
+
+      _js_permission_link_updates_subscription =
+        app().get_channel<chronicle::channels::js_permission_link_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_PERMISSION_LINK, 0, event); });
+
       _js_abi_decoder_errors_subscription =
         app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ENCODER_ERR, 0, event); });
 
       _js_receiver_pauses_subscription =
         app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
-        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_RCVR_PAUSE, 0, event); });      
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_RCVR_PAUSE, 0, event); });
 
       _js_block_completed_subscription =
         app().get_channel<chronicle::channels::js_block_completed>().subscribe
-        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_BLOCK_COMPLETED, 0, event); });      
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_BLOCK_COMPLETED, 0, event); });
     }
     else {
       json_buffer.Reserve(1024*256);
@@ -128,35 +138,43 @@ public:
       _js_forks_subscription =
         app().get_channel<chronicle::channels::js_forks>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("FORK", event); });
-      
+
       _js_blocks_subscription =
         app().get_channel<chronicle::channels::js_blocks>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("BLOCK", event); });
-      
+
       _js_transaction_traces_subscription =
         app().get_channel<chronicle::channels::js_transaction_traces>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("TX_TRACE", event); });
-      
+
       _js_abi_updates_subscription =
         app().get_channel<chronicle::channels::js_abi_updates>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("ABI_UPD", event); });
-      
+
       _js_abi_removals_subscription =
         app().get_channel<chronicle::channels::js_abi_removals>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("ABI_REM", event); });
-      
+
       _js_abi_errors_subscription =
         app().get_channel<chronicle::channels::js_abi_errors>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("ABI_ERR", event); });
-      
+
       _js_table_row_updates_subscription =
         app().get_channel<chronicle::channels::js_table_row_updates>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("TBL_ROW", event); });
-      
+
+      _js_permission_updates_subscription =
+        app().get_channel<chronicle::channels::js_permission_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("PERMISSION", event); });
+
+      _js_permission_link_updates_subscription =
+        app().get_channel<chronicle::channels::js_permission_link_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("PERMISSION_LINK", event); });
+
       _js_receiver_pauses_subscription =
         app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("RCVR_PAUSE", event); });
-      
+
       _js_block_completed_subscription =
         app().get_channel<chronicle::channels::js_block_completed>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("BLOCK_COMPLETED", event); });
@@ -193,12 +211,12 @@ public:
   void stop() {
     close_ws(boost::beast::websocket::close_code::normal);
   }
-  
-  
+
+
   void close_ws(boost::beast::websocket::close_reason reason) {
     ws->next_layer().cancel();
     if( ws->is_open() ) {
-      ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));    
+      ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));
       ws->async_close(reason, app().get_priority_queue().wrap(ws_priority, [&](error_code ec) {
             if (ec) elog(ec.message());
             abort_receiver();
@@ -208,9 +226,9 @@ public:
       abort_receiver();
     }
   }
-    
-      
-  
+
+
+
   void async_read_acks() {
     auto in_buffer = std::make_shared<flat_buffer>();
     ws->async_read
@@ -264,9 +282,9 @@ public:
            }
          }));
   }
-  
 
-  
+
+
   void async_send_events() {
     if( async_queue.empty() ) {
       if( pause_time_msec == 0 ) {
@@ -288,7 +306,7 @@ public:
       }
       else if( async_queue.size() < queue_lwm ) {
         slowdown_receiver(false);
-      }              
+      }
       async_msg = async_queue.front();
       async_queue.pop();
       async_out_buffer = boost::asio::const_buffer(async_msg->data(), async_msg->size());
@@ -305,8 +323,8 @@ public:
            }));
     }
   }
-            
-          
+
+
   inline void push_msg(std::shared_ptr<msgbuf> buf) {
     async_queue.push(buf);
     if( pause_time_msec > 0 )
@@ -318,7 +336,7 @@ public:
     }
   }
 
-  
+
   void on_event_json(const char* msgtype, std::shared_ptr<string> event) {
     try {
       try {
@@ -363,7 +381,7 @@ public:
       abort_receiver();
     }
   }
-  
+
 };
 
 
@@ -389,11 +407,11 @@ void exp_ws_plugin::set_program_options( options_description& cli, options_descr
     ;
 }
 
-  
+
 void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
   if (is_noexport_opt(options))
     return;
-  
+
   try {
     donot_start_receiver_before(this, "exp_ws_plugin");
 
@@ -424,8 +442,8 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     my->queue_lwm = my->queue_hwm * 3 / 4;
 
     my->use_bin_headers = options.at(WS_BINHDR).as<bool>();
-    
-    my->init();    
+
+    my->init();
     ilog("Initialized exp_ws_plugin");
     exporter_initialized();
   }
@@ -446,6 +464,3 @@ void exp_ws_plugin::plugin_shutdown() {
     ilog("exp_ws_plugin stopped");
   }
 }
-
-
-

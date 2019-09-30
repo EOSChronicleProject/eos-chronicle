@@ -27,10 +27,10 @@ using std::make_shared;
 
 namespace json_encoder {
   inline constexpr bool trace_native_to_json = false;
-  
+
   struct native_to_json_state {
     rapidjson::Writer<rapidjson::StringBuffer>& writer;
-    vector<string>* encoder_errors;    
+    vector<string>* encoder_errors;
   };
 
   inline void native_to_json(const std::string& str, native_to_json_state& state) {
@@ -45,7 +45,7 @@ namespace json_encoder {
       state.writer.String("");
     }
   }
-  
+
   inline void arithmetic_to_json(const uint64_t& v, native_to_json_state& state) {
     string str = to_string(v);
     state.writer.String(str.data(), str.length());
@@ -65,7 +65,7 @@ namespace json_encoder {
     string str = to_string(v);
     state.writer.String(str.data(), str.length());
   }
-  
+
   template <typename T>
   void native_to_json(const std::vector<T>& obj, native_to_json_state& state) {
     state.writer.StartArray();
@@ -78,7 +78,7 @@ namespace json_encoder {
     std::string result = to_string(obj);
     state.writer.String(result.data(), result.size());
   }
-    
+
   inline void native_to_json(const chronicle::channels::fork_reason_val& obj, native_to_json_state& state) {
     std::string result = to_string(obj);
     state.writer.String(result.data(), result.size());
@@ -88,7 +88,7 @@ namespace json_encoder {
     std::string result = name_to_string(obj.value);
     state.writer.String(result.data(), result.size());
   }
-  
+
   inline void native_to_json(const abieos::bytes& obj, native_to_json_state& state) {
     std::string result = fc::to_hex(obj.data.data(), obj.data.size());
     state.writer.String(result.data(), result.size());
@@ -101,15 +101,15 @@ namespace json_encoder {
 
   inline void native_to_json(const abieos::input_buffer& obj, native_to_json_state& state) {
     std::string result = fc::to_hex(obj.pos, obj.end-obj.pos);
-    state.writer.String(result.data(), result.size());    
+    state.writer.String(result.data(), result.size());
   }
-  
+
   template <unsigned size>
   inline void native_to_json(const fixed_binary<size>& obj, native_to_json_state& state) {
     std::string result = fc::to_hex((const char*)obj.value.data(), obj.value.size());
     state.writer.String(result.data(), result.size());
   }
-  
+
   inline void native_to_json(const bool& obj, native_to_json_state& state) {
     const char* str = obj ? "true" : "false";
     state.writer.String(str);
@@ -118,7 +118,7 @@ namespace json_encoder {
   inline void native_to_json(const varuint32& obj, native_to_json_state& state) {
     arithmetic_to_json(obj.value, state);
   }
-  
+
   inline void native_to_json(const state_history::action& obj, native_to_json_state& state) {
     state.writer.StartObject();
     for_each_field((state_history::action*)nullptr, [&](auto* name, auto member_ptr) {
@@ -158,9 +158,9 @@ namespace json_encoder {
       });
     state.writer.EndObject();
   }
- 
 
-      
+
+
 
   inline void native_to_json(const chain_state::key_value_object& obj, native_to_json_state& state) {
     state.writer.StartObject();
@@ -202,7 +202,7 @@ namespace json_encoder {
     state.writer.EndObject();
 
   }
-  
+
   template <typename T>
   inline void native_to_json(const std::optional<T>& obj, native_to_json_state& state) {
     if( obj ) {
@@ -212,7 +212,7 @@ namespace json_encoder {
       state.writer.Null();
     }
   }
-  
+
   template <typename T1, typename T2>
   inline void native_to_json(const std::pair<T1,T2>& obj, native_to_json_state& state) {
     state.writer.StartArray();
@@ -230,7 +230,12 @@ namespace json_encoder {
     string str = string(obj);
     state.writer.String(str.data(), str.length());
   }
-  
+
+  inline void native_to_json(const abieos::time_point& obj, native_to_json_state& state) {
+    string str = string(obj);
+    state.writer.String(str.data(), str.length());
+  }
+
   inline void native_to_json(const abieos::public_key& obj, native_to_json_state& state) {
     string str;
     string error;
@@ -270,7 +275,7 @@ namespace json_encoder {
   template
   void native_to_json<state_history::action_trace_v0>(const state_history::action_trace_v0&,
                                                       native_to_json_state&);
-  
+
   template
   void native_to_json<state_history::partial_transaction_v0>(const state_history::partial_transaction_v0&,
                                                              native_to_json_state&);
@@ -303,7 +308,7 @@ namespace json_encoder {
     native_to_json(obj.recurse, state);
   }
 
-    
+
   inline void native_to_json(const state_history::transaction_variant& obj, native_to_json_state& state) {
     if( obj.index() == 0 ) {
       const checksum256& v = std::get<checksum256>(obj);
@@ -314,7 +319,7 @@ namespace json_encoder {
       native_to_json(v, state);
     }
   }
-  
+
 
   // ABI decoder uses this to produce an independent piece of JSON
   template <typename T>
@@ -338,12 +343,14 @@ public:
     _js_abi_removals_chan(app().get_channel<chronicle::channels::js_abi_removals>()),
     _js_abi_errors_chan(app().get_channel<chronicle::channels::js_abi_errors>()),
     _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>()),
+    _js_permission_updates_chan(app().get_channel<chronicle::channels::js_permission_updates>()),
+    _js_permission_link_updates_chan(app().get_channel<chronicle::channels::js_permission_link_updates>()),
     _js_receiver_pauses_chan(app().get_channel<chronicle::channels::js_receiver_pauses>()),
     _js_block_completed_chan(app().get_channel<chronicle::channels::js_block_completed>()),
     _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>()),
     impl_buffer(0, 262144)
   {}
-  
+
   chronicle::channels::js_forks::channel_type&               _js_forks_chan;
   chronicle::channels::js_blocks::channel_type&              _js_blocks_chan;
   chronicle::channels::js_transaction_traces::channel_type&  _js_transaction_traces_chan;
@@ -351,10 +358,12 @@ public:
   chronicle::channels::js_abi_removals::channel_type&        _js_abi_removals_chan;
   chronicle::channels::js_abi_errors::channel_type&          _js_abi_errors_chan;
   chronicle::channels::js_table_row_updates::channel_type&   _js_table_row_updates_chan;
+  chronicle::channels::js_permission_updates::channel_type&  _js_permission_updates_chan;
+  chronicle::channels::js_permission_link_updates::channel_type&  _js_permission_link_updates_chan;
   chronicle::channels::js_receiver_pauses::channel_type&     _js_receiver_pauses_chan;
   chronicle::channels::js_block_completed::channel_type&     _js_block_completed_chan;
   chronicle::channels::js_abi_decoder_errors::channel_type&  _js_abi_decoder_errors_chan;
-  
+
   chronicle::channels::forks::channel_type::handle               _forks_subscription;
   chronicle::channels::blocks::channel_type::handle              _blocks_subscription;
   chronicle::channels::transaction_traces::channel_type::handle  _transaction_traces_subscription;
@@ -362,11 +371,13 @@ public:
   chronicle::channels::abi_removals::channel_type::handle        _abi_removals_subscription;
   chronicle::channels::abi_updates::channel_type::handle         _abi_updates_subscription;
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
+  chronicle::channels::permission_updates::channel_type::handle  _permission_updates_subscription;
+  chronicle::channels::permission_link_updates::channel_type::handle  _permission_link_updates_subscription;
   chronicle::channels::receiver_pauses::channel_type::handle     _receiver_pauses_subscription;
   chronicle::channels::block_completed::channel_type::handle     _block_completed_subscription;
 
   const int channel_priority = 50;
-  
+
   // A static copy of JSON writer buffer in order to avoid reallocation
   rapidjson::StringBuffer impl_buffer;
   rapidjson::Writer<rapidjson::StringBuffer> impl_writer;
@@ -378,9 +389,9 @@ public:
     json_encoder::native_to_json_state state{impl_writer, encoder_errors};
     json_encoder::native_to_json(v, state);
     dest = impl_buffer.GetString();
-  }  
+  }
 
-  
+
   // we only subscribe to receiver channels at startup, assuming our consumers have subscribed at init
   void start() {
     if (_js_forks_chan.has_subscribers()) {
@@ -430,6 +441,20 @@ public:
         app().get_channel<chronicle::channels::table_row_updates>().subscribe
         ([this](std::shared_ptr<chronicle::channels::table_row_update> trupd){
           on_table_row_update(trupd);
+        });
+    }
+    if (_js_permission_updates_chan.has_subscribers()) {
+      _permission_updates_subscription =
+        app().get_channel<chronicle::channels::permission_updates>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::permission_update> trupd){
+          on_permission_update(trupd);
+        });
+    }
+    if (_js_permission_link_updates_chan.has_subscribers()) {
+      _permission_link_updates_subscription =
+        app().get_channel<chronicle::channels::permission_link_updates>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::permission_link_update> trupd){
+          on_permission_link_update(trupd);
         });
     }
     if (_js_receiver_pauses_chan.has_subscribers()) {
@@ -493,7 +518,7 @@ public:
     impl_native_to_json(*abierr, *output);
     _js_abi_errors_chan.publish(channel_priority, output);
   }
-  
+
   void on_table_row_update(std::shared_ptr<chronicle::channels::table_row_update> trupd) {
     vector<string> encoder_errors;
     auto output = make_shared<string>();
@@ -513,7 +538,18 @@ public:
     }
   }
 
-  
+  void on_permission_update(std::shared_ptr<chronicle::channels::permission_update> pupd) {
+    auto output = make_shared<string>();
+    impl_native_to_json(*pupd, *output);
+    _js_permission_updates_chan.publish(channel_priority, output);
+  }
+
+  void on_permission_link_update(std::shared_ptr<chronicle::channels::permission_link_update> plupd) {
+    auto output = make_shared<string>();
+    impl_native_to_json(*plupd, *output);
+    _js_permission_link_updates_chan.publish(channel_priority, output);
+  }
+
   void on_receiver_pause(std::shared_ptr<chronicle::channels::receiver_pause> rp) {
     auto output = make_shared<string>();
     impl_native_to_json(*rp, *output);
@@ -526,8 +562,8 @@ public:
     impl_native_to_json(*bf, *output);
     _js_block_completed_chan.publish(channel_priority, output);
   }
-  
-  
+
+
   inline void report_encoder_errors(vector<string>& encoder_errors, map<string, string>& attrs) {
     rapidjson::StringBuffer buffer(0, 1024);
     rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
@@ -545,7 +581,7 @@ public:
     auto output = make_shared<string>(buffer.GetString());
     _js_abi_decoder_errors_chan.publish(channel_priority, output);
   }
-      
+
 };
 
 
@@ -560,7 +596,7 @@ decoder_plugin::~decoder_plugin(){
 void decoder_plugin::set_program_options( options_description& cli, options_description& cfg ) {
 }
 
-  
+
 void decoder_plugin::plugin_initialize( const variables_map& options ) {
   if (is_noexport_opt(options))
     return;
@@ -584,6 +620,3 @@ void decoder_plugin::plugin_shutdown() {
     ilog("decoder_plugin stopped");
   }
 }
-
-
-
