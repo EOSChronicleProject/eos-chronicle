@@ -235,6 +235,7 @@ public:
     _table_row_updates_chan(app().get_channel<chronicle::channels::table_row_updates>()),
     _permission_updates_chan(app().get_channel<chronicle::channels::permission_updates>()),
     _permission_link_updates_chan(app().get_channel<chronicle::channels::permission_link_updates>()),
+    _account_metadata_updates_chan(app().get_channel<chronicle::channels::account_metadata_updates>()),
     _receiver_pauses_chan(app().get_channel<chronicle::channels::receiver_pauses>()),
     _block_completed_chan(app().get_channel<chronicle::channels::block_completed>()),
     pause_timer(std::ref(app().get_io_service())),
@@ -296,6 +297,7 @@ public:
   chronicle::channels::table_row_updates::channel_type&   _table_row_updates_chan;
   chronicle::channels::permission_updates::channel_type&  _permission_updates_chan;
   chronicle::channels::permission_link_updates::channel_type&  _permission_link_updates_chan;
+  chronicle::channels::account_metadata_updates::channel_type&  _account_metadata_updates_chan;
   chronicle::channels::receiver_pauses::channel_type&     _receiver_pauses_chan;
   chronicle::channels::block_completed::channel_type&     _block_completed_chan;
 
@@ -928,6 +930,18 @@ public:
               throw runtime_error("cannot read permission_link object" + error);
             plu->added = row.present;
             _permission_link_updates_chan.publish(channel_priority, plu);
+          }
+        }
+        else if (bltd->table_delta.name == "account_metadata" && _account_metadata_updates_chan.has_subscribers() ) {
+          for (auto& row : bltd->table_delta.rows) {
+            auto amu = std::make_shared<chronicle::channels::account_metadata_update>();
+            amu->block_num = head;
+            amu->block_timestamp = block_timestamp;
+            amu->buffer = p;
+            string error;
+            if (!bin_to_native(amu->account_metadata, error, row.data))
+              throw runtime_error("cannot read account_metadata object" + error);
+            _account_metadata_updates_chan.publish(channel_priority, amu);
           }
         }
       }

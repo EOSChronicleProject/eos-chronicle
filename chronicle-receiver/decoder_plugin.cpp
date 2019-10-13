@@ -345,6 +345,7 @@ public:
     _js_table_row_updates_chan(app().get_channel<chronicle::channels::js_table_row_updates>()),
     _js_permission_updates_chan(app().get_channel<chronicle::channels::js_permission_updates>()),
     _js_permission_link_updates_chan(app().get_channel<chronicle::channels::js_permission_link_updates>()),
+    _js_account_metadata_updates_chan(app().get_channel<chronicle::channels::js_account_metadata_updates>()),
     _js_receiver_pauses_chan(app().get_channel<chronicle::channels::js_receiver_pauses>()),
     _js_block_completed_chan(app().get_channel<chronicle::channels::js_block_completed>()),
     _js_abi_decoder_errors_chan(app().get_channel<chronicle::channels::js_abi_decoder_errors>()),
@@ -360,6 +361,7 @@ public:
   chronicle::channels::js_table_row_updates::channel_type&   _js_table_row_updates_chan;
   chronicle::channels::js_permission_updates::channel_type&  _js_permission_updates_chan;
   chronicle::channels::js_permission_link_updates::channel_type&  _js_permission_link_updates_chan;
+  chronicle::channels::js_account_metadata_updates::channel_type&  _js_account_metadata_updates_chan;
   chronicle::channels::js_receiver_pauses::channel_type&     _js_receiver_pauses_chan;
   chronicle::channels::js_block_completed::channel_type&     _js_block_completed_chan;
   chronicle::channels::js_abi_decoder_errors::channel_type&  _js_abi_decoder_errors_chan;
@@ -373,6 +375,7 @@ public:
   chronicle::channels::table_row_updates::channel_type::handle   _table_row_updates_subscription;
   chronicle::channels::permission_updates::channel_type::handle  _permission_updates_subscription;
   chronicle::channels::permission_link_updates::channel_type::handle  _permission_link_updates_subscription;
+  chronicle::channels::account_metadata_updates::channel_type::handle  _account_metadata_updates_subscription;
   chronicle::channels::receiver_pauses::channel_type::handle     _receiver_pauses_subscription;
   chronicle::channels::block_completed::channel_type::handle     _block_completed_subscription;
 
@@ -455,6 +458,13 @@ public:
         app().get_channel<chronicle::channels::permission_link_updates>().subscribe
         ([this](std::shared_ptr<chronicle::channels::permission_link_update> trupd){
           on_permission_link_update(trupd);
+        });
+    }
+    if (_js_account_metadata_updates_chan.has_subscribers()) {
+      _account_metadata_updates_subscription =
+        app().get_channel<chronicle::channels::account_metadata_updates>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::account_metadata_update> trupd){
+          on_account_metadata_update(trupd);
         });
     }
     if (_js_receiver_pauses_chan.has_subscribers()) {
@@ -548,6 +558,12 @@ public:
     auto output = make_shared<string>();
     impl_native_to_json(*plupd, *output);
     _js_permission_link_updates_chan.publish(channel_priority, output);
+  }
+
+  void on_account_metadata_update(std::shared_ptr<chronicle::channels::account_metadata_update> plupd) {
+    auto output = make_shared<string>();
+    impl_native_to_json(*plupd, *output);
+    _js_account_metadata_updates_chan.publish(channel_priority, output);
   }
 
   void on_receiver_pause(std::shared_ptr<chronicle::channels::receiver_pause> rp) {

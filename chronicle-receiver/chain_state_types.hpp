@@ -199,4 +199,32 @@ namespace chain_state {
     f("message_type", abieos::member_ptr<&permission_link_object::message_type>{});
     f("required_permission", abieos::member_ptr<&permission_link_object::required_permission>{});
   }
+
+  struct account_metadata_code {
+    uint8_t               vm_type = 0;
+    uint8_t               vm_version = 0;
+    abieos::checksum256   code_hash;
+  };
+
+  template <typename F>
+  constexpr void for_each_field(account_metadata_code*, F f) {
+    f("vm_type", abieos::member_ptr<&account_metadata_code::vm_type>{});
+    f("vm_version", abieos::member_ptr<&account_metadata_code::vm_version>{});
+    f("code_hash", abieos::member_ptr<&account_metadata_code::code_hash>{});
+  }
+
+  struct account_metadata_object {
+    abieos::name          name;
+    bool                  is_privileged;
+    time_point            last_code_update;
+    std::optional<account_metadata_code> code_metadata;
+  };
+
+  template <typename F>
+  constexpr void for_each_field(account_metadata_object*, F f) {
+    f("name", abieos::member_ptr<&account_metadata_object::name>{});
+    f("is_privileged", abieos::member_ptr<&account_metadata_object::is_privileged>{});
+    f("last_code_update", abieos::member_ptr<&account_metadata_object::last_code_update>{});
+    f("code_metadata", abieos::member_ptr<&account_metadata_object::code_metadata>{});
+  }
 }
