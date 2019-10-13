@@ -1,3 +1,5 @@
+
+
 // copyright defined in LICENSE.txt
 
 #include "exp_ws_plugin.hpp"
@@ -45,6 +47,7 @@ public:
   chronicle::channels::js_table_row_updates::channel_type::handle   _js_table_row_updates_subscription;
   chronicle::channels::js_permission_updates::channel_type::handle  _js_permission_updates_subscription;
   chronicle::channels::js_permission_link_updates::channel_type::handle  _js_permission_link_updates_subscription;
+  chronicle::channels::js_account_metadata_updates::channel_type::handle  _js_account_metadata_updates_subscription;
   chronicle::channels::js_receiver_pauses::channel_type::handle     _js_receiver_pauses_subscription;
   chronicle::channels::js_block_completed::channel_type::handle     _js_block_completed_subscription;
   chronicle::channels::js_abi_decoder_errors::channel_type::handle  _js_abi_decoder_errors_subscription;
@@ -120,6 +123,10 @@ public:
         app().get_channel<chronicle::channels::js_permission_link_updates>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_PERMISSION_LINK, 0, event); });
 
+      _js_account_metadata_updates_subscription =
+        app().get_channel<chronicle::channels::js_account_metadata_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ACC_METADATA, 0, event); });
+
       _js_abi_decoder_errors_subscription =
         app().get_channel<chronicle::channels::js_abi_decoder_errors>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_ENCODER_ERR, 0, event); });
@@ -170,6 +177,10 @@ public:
       _js_permission_link_updates_subscription =
         app().get_channel<chronicle::channels::js_permission_link_updates>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("PERMISSION_LINK", event); });
+
+      _js_account_metadata_updates_subscription =
+        app().get_channel<chronicle::channels::js_account_metadata_updates>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("ACC_METADATA", event); });
 
       _js_receiver_pauses_subscription =
         app().get_channel<chronicle::channels::js_receiver_pauses>().subscribe

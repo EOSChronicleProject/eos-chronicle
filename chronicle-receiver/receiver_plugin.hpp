@@ -195,6 +195,23 @@ namespace chronicle {
       channel_decl<struct permission_link_updates_tag, std::shared_ptr<permission_link_update>>;
 
 
+    struct account_metadata_update {
+      uint32_t                                 block_num;
+      abieos::block_timestamp                  block_timestamp;
+      chain_state::account_metadata_object     account_metadata;
+      std::shared_ptr<flat_buffer>             buffer;
+    };
+
+    template <typename F>
+    constexpr void for_each_field(account_metadata_update*, F f) {
+      f("block_num", member_ptr<&account_metadata_update::block_num>{});
+      f("block_timestamp", member_ptr<&account_metadata_update::block_timestamp>{});
+      f("account_metadata", member_ptr<&account_metadata_update::account_metadata>{});
+    }
+
+    using account_metadata_updates =
+      channel_decl<struct account_metadata_updates_tag, std::shared_ptr<account_metadata_update>>;
+
     struct receiver_pause {
       uint32_t                           head;
       uint32_t                           acknowledged;
