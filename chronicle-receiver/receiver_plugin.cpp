@@ -946,7 +946,6 @@ public:
             auto amu = std::make_shared<chronicle::channels::account_metadata_update>();
             amu->block_num = head;
             amu->block_timestamp = block_timestamp;
-            amu->buffer = p;
             string error;
             if (!bin_to_native(amu->account_metadata, error, row.data))
               throw runtime_error("cannot read account_metadata object" + error);

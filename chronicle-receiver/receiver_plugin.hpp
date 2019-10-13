@@ -199,7 +199,6 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       chain_state::account_metadata_object     account_metadata;
-      std::shared_ptr<flat_buffer>             buffer;
     };
 
     template <typename F>
