@@ -277,6 +277,7 @@ public:
   checksum256                           irreversible_id = {};
   uint32_t                              first_bulk      = 0;
   abieos::block_timestamp               block_timestamp;
+  uint32_t                              received_blocks = 0;
 
   // needed for decoding state history input
   map<string, abi_type>                 abi_types;
@@ -534,7 +535,7 @@ public:
   }
 
   void check_stale_head() {
-    if( stale_check_last_head == head && pause_time_msec == 0 ) {
+    if( stale_check_last_head == head && pause_time_msec == 0 && received_blocks > 0 ) {
       elog("Did not receive anything in ${d} milliseconds. Aborting the receiver", ("d", stale_check_deadline_msec));
       abort_receiver();
     }
@@ -671,6 +672,8 @@ public:
     if (!result.this_block)
       return true;
 
+    received_blocks++;
+
     uint32_t    last_irreversible_num = result.last_irreversible.block_num;
 
     uint32_t    block_num = result.this_block->block_num;
@@ -794,8 +797,8 @@ public:
       if (report_every > 0 && head % report_every == 0) {
         uint64_t free_bytes = db->get_segment_manager()->get_free_memory();
         uint64_t size = db->get_segment_manager()->get_size();
-        ilog("block=${h}; irreversible=${i}; dbmem_free=${m}",
-             ("h",head)("i",irreversible)("m", free_bytes*100/size));
+        ilog("block=${h}; irreversible=${i}; dbmem_free=${m}; received_blocks=${t}",
+             ("h",head)("i",irreversible)("m", free_bytes*100/size)("t",received_blocks));
         if( exporter_will_ack )
           ilog("Exporter acknowledged block=${b}, unacknowledged=${u}",
                ("b", exporter_acked_block)("u", head-exporter_acked_block));
