@@ -49,6 +49,7 @@ namespace chronicle {
 
     struct block {
       uint32_t                             block_num;
+      abieos::checksum256                  block_id;
       uint32_t                             last_irreversible;
       state_history::signed_block          block;
       std::shared_ptr<flat_buffer>         buffer;
@@ -57,6 +58,7 @@ namespace chronicle {
     template <typename F>
     constexpr void for_each_field(block*, F f) {
       f("block_num", member_ptr<&block::block_num>{});
+      f("block_id", member_ptr<&block::block_id>{});
       f("last_irreversible", member_ptr<&block::last_irreversible>{});
       f("block", member_ptr<&block::block>{});
     }
