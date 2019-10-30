@@ -238,6 +238,7 @@ namespace chronicle {
 
     struct block_finished {
       uint32_t                        block_num;
+      abieos::checksum256             block_id;
       abieos::block_timestamp         block_timestamp;
       uint32_t                        last_irreversible;
     };
@@ -245,6 +246,7 @@ namespace chronicle {
     template <typename F>
     constexpr void for_each_field(block_finished*, F f) {
       f("block_num", member_ptr<&block_finished::block_num>{});
+      f("block_id", member_ptr<&block_finished::block_id>{});
       f("block_timestamp", member_ptr<&block_finished::block_timestamp>{});
       f("last_irreversible", member_ptr<&block_finished::last_irreversible>{});
     }

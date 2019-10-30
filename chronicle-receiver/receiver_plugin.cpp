@@ -777,6 +777,7 @@ public:
 
     auto bf = std::make_shared<chronicle::channels::block_finished>();
     bf->block_num = head;
+    bf->block_id = head_id;
     bf->last_irreversible = irreversible;
     bf->block_timestamp = block_timestamp;
     _block_completed_chan.publish(channel_priority, bf);
