@@ -827,6 +827,7 @@ public:
 
     auto block_ptr = std::make_shared<chronicle::channels::block>();
     block_ptr->block_num = head;
+    block_ptr->block_id = head_id;
     block_ptr->last_irreversible = irreversible;
     block_ptr->buffer = p;
 

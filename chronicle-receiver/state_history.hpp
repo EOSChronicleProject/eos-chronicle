@@ -372,7 +372,6 @@ struct block_header {
     uint32_t                         schedule_version  = {};
     std::optional<producer_schedule> new_producers     = {};
     std::vector<extension>           header_extensions = {};
-    abieos::checksum256              id                = {};
 };
 
 template <typename F>
@@ -386,7 +385,6 @@ constexpr void for_each_field(block_header*, F f) {
     f("schedule_version", abieos::member_ptr<&block_header::schedule_version>{});
     f("new_producers", abieos::member_ptr<&block_header::new_producers>{});
     f("header_extensions", abieos::member_ptr<&block_header::header_extensions>{});
-    f("id", abieos::member_ptr<&block_header::id>{});
 }
 
 struct signed_block_header : block_header {
