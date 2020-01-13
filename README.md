@@ -14,8 +14,8 @@ below.
 
 # Git branches
 
-`master` branch of Chronicle is compatible with current release of EOSIO
-`nodeos` (currently 1.8.0 release).
+`master` branch of Chronicle is compatible with releases 1.8 and 2.0
+of EOSIO `nodeos`.
 
 `nodeos-1.8rc2` branch of Chronicle is only compatible with the release
 candidate (nodeos 1.8rc2) because th efinal release has different output

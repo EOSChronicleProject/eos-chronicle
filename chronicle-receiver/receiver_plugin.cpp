@@ -154,7 +154,7 @@ namespace chronicle {
     chainbase::shared_string  abi;
 
     void set_abi(const std::vector<char> data) {
-      abi.resize(data.size());
+      abi.resize(data.size(), {});
       abi.assign(data.data(), data.size());
     }
   };
@@ -178,7 +178,7 @@ namespace chronicle {
     chainbase::shared_string  abi;
 
     void set_abi(const std::vector<char> data) {
-      abi.resize(data.size());
+      abi.resize(data.size(), {});
       abi.assign(data.data(), data.size());
     }
   };
@@ -360,10 +360,11 @@ public:
     {
       bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
       auto &index = db->get_index<chronicle::state_index>();
-      if( index.stack().size() > 0 ) {
-        depth = index.stack().size();
+      if( index.has_undo_session() ) {
+        auto range = index.undo_stack_revision_range();
+        depth = range.second - range.first;
         ilog("Database has ${d} uncommitted revisions. Reverting back", ("d",depth));
-        while (index.stack().size() > 0)
+        while (index.has_undo_session() > 0)
           db->undo();
         did_undo = true;
       }
@@ -860,7 +861,12 @@ public:
         throw runtime_error("table_delta conversion error: " + error);
 
       auto& variant_type = get_type(bltd->table_delta.name);
-      if (!variant_type.filled_variant || variant_type.fields.size() != 1 || !variant_type.fields[0].type->filled_struct)
+      if( variant_type.fields.size() > 1 ) {
+        wlog("Variant type ${t} has more than one alternative, not supported yet", ("t", variant_type.name));
+        continue;
+      }
+      
+      if (!variant_type.filled_variant || !variant_type.fields[0].type->filled_struct)
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
       auto& type = *variant_type.fields[0].type;
 
