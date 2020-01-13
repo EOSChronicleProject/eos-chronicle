@@ -6,7 +6,7 @@ https://github.com/cc32d9/eos-work-proposals/tree/master/001_EOS_Chronicle
 The goal is to build a scalable and reliable toolset for maintaining EOS
 blockchain history in a database.
 
-The first stage of the project is to produce a feed of blochain events
+The first stage of the project is to produce a feed of blockchain events
 that could be consumed by other components for further
 processing. `chronicle-receiver` is implementing this as described
 below.
@@ -18,7 +18,7 @@ below.
 of EOSIO `nodeos`.
 
 `nodeos-1.8rc2` branch of Chronicle is only compatible with the release
-candidate (nodeos 1.8rc2) because th efinal release has different output
+candidate (nodeos 1.8rc2) because the final release has different output
 format of state history.
 
 `nodeos-1.7` branch of Chronicle is compatible with `nodeos` releases
@@ -50,11 +50,11 @@ lower.
 The communication between exporter and consumer is performed
 asynchronously: the receiver starts with a parameter indicating the
 maximum number of unacknowledged blocks (1000 by default), and it
-continues retrieveing data from `nodeos` as long as the consumer
+continues retrieving data from `nodeos` as long as the consumer
 confirms the blocks within this maximum. Received and decoded data is
 kept in a queue that is fed to the consumer, allowing it to process the
 data at its own pace. If the number of unacknowledged blocks reaches the
-maxumum, the reader pauses itself with an increasing timer, varying from
+maximum, the reader pauses itself with an increasing timer, varying from
 0.1 to 8 seconds. If the pause exceeds 1 second, an informational event
 is generated.
 
@@ -90,7 +90,7 @@ follows:
   block numbers.
 
 
-In `scan-noexport` mode, the receiver requestts the blocks from state
+In `scan-noexport` mode, the receiver requests the blocks from state
 history sequentially and stores all revisions of contract ABI in its
 memory. This allows it to be quickly available for interactive mode.
 
@@ -116,7 +116,7 @@ JSON and passed to the exporter plugin.
 
 Receiver does not expect any acknowledgements in interactive mode.
 
-Only irreversoble blocks are available for interactive mode.
+Only irreversible blocks are available for interactive mode.
 
 Note that in case of `exp_ws_plugin`, you need to specify a different
 TCP port of the websocket server, so that it does not interfere with the
@@ -180,14 +180,12 @@ integers separated by minus sign (-) indicating a range of blocks.
 
 # Compiling
 
-Minimum requirements: Boost libraries version 1.67 or higher.
+Minimum requirements: Cmake 3.11, Boost 1.67, GCC 8.3.0.
 
-3GB RAM is required for sucessful compilation. Smaller RAM will cause
+3GB RAM is required for successful compilation. Smaller RAM will cause
 heavy swapping during the compilation.
 
-Ubuntu 18.10 delivers Boost 1.67 in binary packages. Earlier versions of
-Ubuntu will require manual compilation of Boost.
-
+Ubuntu 18.10 instructions:
 
 
 ```
@@ -207,6 +205,40 @@ cmake ..
 # use "make -j N" for N CPU cores for faster compiling (may require more RAM)
 make
 ```
+
+Ubuntu 18.04 instructions:
+
+
+```
+wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | sudo apt-key add -
+sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
+
+sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+
+sudo apt update && \
+sudo apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
+
+wget https://dl.bintray.com/boostorg/release/1.67.0/source/boost_1_67_0.tar.gz
+tar -xvzf boost_1_67_0.tar.gz
+cd boost_1_67_0
+./bootstrap.sh
+# use " sudo ./b2 install -j N" for N CPU cores for faster compiling (may require more RAM)
+sudo ./b2 install 
+cd ..
+
+mkdir build
+cd build
+git clone https://github.com/EOSChronicleProject/eos-chronicle.git
+cd eos-chronicle
+git submodule update --init --recursive
+mkdir build
+cd build
+cmake ..
+# use "make -j N" for N CPU cores for faster compiling (may require more RAM)
+make
+```
+
 
 `examples/exp-dummy-plugin` explains how to add and compile your own plugin to `chronicle-receiver`.
 
@@ -234,7 +266,7 @@ state-history-endpoint = 0.0.0.0:8080
 
 # Configuring and running
 
-Similarly to `nodeos`, `chronicle-receiver` needs a configuratuion
+Similarly to `nodeos`, `chronicle-receiver` needs a configuration
 directory with `config.ini` in it, and a data directory where it stores
 its internal state.
 
@@ -243,7 +275,7 @@ Further on, we use Linux user `eosio` for running the receiver, and
 may choose other names.
 
 Here's a minimal configuration for the receiver using Websocket
-exporter. It connects to `nodeos` process runnig `state_history_plugin`
+exporter. It connects to `nodeos` process running `state_history_plugin`
 at `localhost:8080` and exports the data to a websocket server at
 `localhost:8800`. In a production environment, hosts may be different
 machines in the network. The example is using bidirectional mode and
@@ -352,7 +384,7 @@ The following options are available from command line and `config.ini`:
     export. This is the fastest mode to collect ABI revisions so that
     interactive access can fetch required blocks.
 
-  * `interactive`: interactove mode allows the consumer request random
+  * `interactive`: interactive mode allows the consumer request random
     blocks. Irreversible-only mode is automatically set in this mode.
 
 * `report-every = N` (=`10000`) Print informational messages every so
@@ -376,7 +408,7 @@ only
 
 * `start-block = N` (=`0`) Initialize Chronicle state from given
   block. This is intended for starting Chronicle off a node that started
-  from a portable snapshot. The snapshot has all table contents in in
+  from a portable snapshot. The snapshot has all table contents in
   the beginning, so Chronicle will process them all before continuing
   with the blocks. It may take some significant time. This option is
   only allowed when Chronicle data directory is empty.
@@ -422,7 +454,7 @@ characters.
 ## Release 1.0
 
 This release is based on Block.one libraries of particular older
-versions. It uses `abieos` library from Novemner 13th, with an
+versions. It uses `abieos` library from November 13th, with an
 additional patch. Newer versions of those libraries are introducing some
 incompatible changes, and the work is in progress to adapt Chronicle to
 those changes.
@@ -435,7 +467,7 @@ those changes.
 
 * `exp_zmq_plugin` is removed because of instable work with Boost ASIO.
 
-* Newest libraries from Block One repositories are used, and the most
+* Newest libraries from Block.one repositories are used, and the most
   dramatic change is that channels are processed asynchronously. Also
   all asynchronous tasks must be wrapped in `appbase` priority queue.
 
@@ -473,7 +505,7 @@ New message types: 1011 and 1012 (PERMISSION and PERMISSION_LINK).
 
 
 
-# Souce code, license and copyright
+# Source code, license and copyright
 
 Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
