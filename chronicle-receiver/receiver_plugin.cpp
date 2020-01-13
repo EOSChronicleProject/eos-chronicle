@@ -860,7 +860,12 @@ public:
         throw runtime_error("table_delta conversion error: " + error);
 
       auto& variant_type = get_type(bltd->table_delta.name);
-      if (!variant_type.filled_variant || variant_type.fields.size() != 1 || !variant_type.fields[0].type->filled_struct)
+      if( variant_type.fields.size() > 1 ) {
+        wlog("Variant type ${t} has more than one alternative, not supported yet", ("t", variant_type.name));
+        continue;
+      }
+
+      if (!variant_type.filled_variant || !variant_type.fields[0].type->filled_struct)
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
       auto& type = *variant_type.fields[0].type;
 
