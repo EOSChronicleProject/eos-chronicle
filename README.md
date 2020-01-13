@@ -17,6 +17,17 @@ below.
 `master` branch of Chronicle is compatible with releases 1.8 and 2.0
 of EOSIO `nodeos`.
 
+The release on January 13th 2020 is not backward compatible with
+on-disk data format of Chronicle. If you used Chronicle before, you
+either need to use `chroncile-1.2-backport` branch, or start nodeos
+from snapshot and start Chronicle with `--start-block` option.
+
+`chroncile-1.2-backport` branch is compatible with nodeos 1.8 and 2.0,
+while preserving backward compatibility with on-disk data created by
+older Chronicle versions. It is recommended to eventually update to
+release version because it uses newest `chainbase` library by Block
+One.
+
 `nodeos-1.8rc2` branch of Chronicle is only compatible with the release
 candidate (nodeos 1.8rc2) because the final release has different output
 format of state history.
@@ -482,25 +493,34 @@ those changes.
 * New options: `irreversible-only`, `end-block`.
 
 
-## Pre-release 1.2
+## Release 1.2
 
-This release will support nodeos-1.8, and will not be compatible with
-nodeos-1.7. It's not compatible with 1.8-rc1 either, as there is a
-difference in state history data format. You need to compile nodeos from
-"release/1.8.x" branch.
+This release supports nodeos versions 1.8 ans 2.0, and not compatible with
+nodeos-1.7. 
 
-Sample output, gzipped, is available at
-https://cloudflare-ipfs.com/ipfs/QmQuYhmEwphoGC6ucXmBSmecfsm3ZbjLdUmSQdkfsh4uAw
+* New message types: 1011, 1012, 1013 (PERMISSION, PERMISSION_LINK,
+  ACC_METADATA).
 
-New message types: 1011 and 1012 (PERMISSION and PERMISSION_LINK).
+* New field `block_id` in BLOCK and BLOCK_COMPLETED messages.
+
+* New options: `stale-deadline`, `exp-ws-path`, `start-block`,
+  `skip-traces`.
+
+* Bugfixes and improvements.
 
 
 
 
 # Third-party software
 
-* Docker file provided by EOS Tribe:
-  https://github.com/EOSTribe/eos-chronicle-docker
+* [Awesome
+Chronicle](https://github.com/EOSChronicleProject/awesome-chronicle)
+is a list of software projects and services using the software.
+
+
+* [Docker file provided by EOS
+  Tribe](https://github.com/EOSTribe/eos-chronicle-docker)
+
 
 
 
@@ -509,7 +529,7 @@ New message types: 1011 and 1012 (PERMISSION and PERMISSION_LINK).
 
 Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
-Copyright 2018-2019 cc32d9@gmail.com
+Copyright 2018-2020 cc32d9@gmail.com
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
