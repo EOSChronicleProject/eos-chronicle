@@ -444,6 +444,40 @@ only
   chronicle-receiver will stop and exit. The deadline timer is not
   used if the receiver is paused by a slow consumer.
 
+* `enable-receiver-filter = true|false` (=`false`) if enabled,
+  activates output filtering on traces matching the `include-receiver`
+  filters.
+
+* `include-receiver = NAME` If `enable-receivers-filter` is enabled,
+  one or multiple `include-receiver` options specify the EOSIO account
+  names that need to be matched in traces. The receiver looks for
+  these names in receipt receivers of every action in trace, and
+  outputs the trace only if at least one name matches. The smart
+  contract executing an action is always receiving a receipt, so you
+  can easily filter by contracts. Also in token transfers, normally
+  payer and payee are receiving receipts.
+
+* `enable-auth-filter = true|false` (=`false`) if enabled, activates
+  output filtering on traces matching `include-auth` filters.
+
+* `include-auth = NAME` If `enable-auth-filter` is enabled, one or
+  multiple `include-auth` options specufy the account names that are
+  looked up in action authorizations. Only the traces matching at
+  least one authorization will be included in the output.
+
+* `blacklist-action = CONTRACT:ACTION` This option defines action
+  names for specific contracts that are blocking the output of
+  corresponding traces. Multiple (contract:action) tuples can be
+  specified. By default, only `eosio:onblock` is blacklisted.
+
+
+If both `enable-receiver-filter` and `enable-auth-filter` are enabled,
+the output will include traces matching any of the filters. The
+blacklist has absolute precedence: regardless of filters
+configuration, if a transaction matches the blacklist, it is dropped
+from output.
+
+
 Options for `exp_ws_plugin`:
 
 * `exp-ws-host = HOST` (mandatory): Websocket server host to connect to;
@@ -522,6 +556,11 @@ nodeos-1.7.
 * Bugfixes and improvements.
 
 
+## Release candidate 1.3
+
+* New options for filtering: `enable-receiver-filter`,
+  `include-receiver`, `enable-auth-filter`, `include-auth`,
+  `blacklist-action`
 
 
 # Ecosystem links

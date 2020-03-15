@@ -22,6 +22,7 @@
 #include <boost/interprocess/mapped_region.hpp>
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
 #include <boost/interprocess/sync/scoped_lock.hpp>
+#include <boost/algorithm/string.hpp>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -86,6 +87,11 @@ namespace {
   const char* RCV_START_BLOCK_OPT = "start-block";
   const char* RCV_END_BLOCK_OPT = "end-block";
   const char* RCV_STALE_DEADLINE_OPT = "stale-deadline";
+  const char* RCV_ENABLE_RCVR_FILTER_OPT = "enable-receiver-filter";
+  const char* RCV_INCLUDE_RECEIVER_OPT = "include-receiver";
+  const char* RCV_ENABLE_AUTH_FILTER_OPT = "enable-auth-filter";
+  const char* RCV_INCLUDE_AUTH_OPT = "include-auth";
+  const char* RCV_BLACKLIST_ACTION_OPT = "blacklist-action";
 
   const char* RCV_MODE_SCAN = "scan";
   const char* RCV_MODE_SCAN_NOEXP = "scan-noexport";
@@ -286,8 +292,16 @@ public:
   abieos_context*                       contract_abi_ctxt = nullptr;
   set<uint64_t>                         contract_abi_imported;
 
-  std::map<name,std::set<name>>         blacklist_actions;
+  std::map<uint64_t,std::set<uint64_t>> blacklist_actions;
 
+  bool                                  enable_rcvr_filter;
+  set<uint64_t>                         rcvr_filter;
+  
+  bool                                  enable_auth_filter;
+  set<uint64_t>                         auth_filter;
+
+  bool                                  do_filter; // true if any of filters is enabled
+  
   chronicle::channels::forks::channel_type&               _forks_chan;
   chronicle::channels::blocks::channel_type&              _blocks_chan;
   chronicle::channels::block_table_deltas::channel_type&  _block_table_deltas_chan;
@@ -1130,22 +1144,58 @@ public:
         tr->buffer = p;
         if (!bin_to_native(tr->trace, error, bin))
           throw runtime_error("transaction_trace conversion error: " + error);
-        // check blacklist
-        bool blacklisted = false;
+        
+        // check blacklist and filter
+        bool matched_blacklist = false;
+        bool matched_rcvr_filter = false;
+        bool matched_auth_filter = false;
         auto& trace = std::get<state_history::transaction_trace_v0>(tr->trace);
-        if( trace.action_traces.size() > 0 ) {
-          auto &at = std::get<state_history::action_trace_v0>(trace.action_traces[0]);
-          auto search_acc = blacklist_actions.find(at.receiver);
-          if(search_acc != blacklist_actions.end()) {
-            if( search_acc->second.count(at.act.name) != 0 ) {
-              blacklisted = true;
+
+        for( auto atrace = trace.action_traces.begin();
+             atrace != trace.action_traces.end();
+             ++atrace ) {
+          
+          auto &at = std::get<state_history::action_trace_v0>(*atrace);
+
+          // lookup in blacklist
+          auto search_acc = blacklist_actions.find(at.act.account.value);
+          if( search_acc != blacklist_actions.end() ) {
+            if( search_acc->second.count(at.act.name.value) != 0 ) {
+              matched_blacklist = true;
+              break;
             }
           }
+
+          // check the receivers filter
+          if( enable_rcvr_filter ) {
+            if( rcvr_filter.count(at.receiver.value) > 0 ) {
+              matched_rcvr_filter = true;
+              break;
+            }
+          }
+          
+          // check auth filter
+          if( enable_auth_filter ) {
+            for( auto auth : at.act.authorization ) {
+              if( auth_filter.count(auth.actor.value) > 0 ) {
+                matched_auth_filter = true;
+                break;
+              }
+            }
+
+            if( matched_auth_filter )
+              break;
+          }
         }
-        if( !blacklisted ) {
-          tr->block_num = head;
-          tr->block_timestamp = block_timestamp;
-          _transaction_traces_chan.publish(channel_priority, tr);
+        
+        if( !matched_blacklist ) {
+          if( !do_filter ||
+              (enable_rcvr_filter && matched_rcvr_filter) ||
+              (enable_auth_filter && matched_auth_filter) ) {
+            tr->block_num = head;
+            tr->block_timestamp = block_timestamp;
+            _transaction_traces_chan.publish(channel_priority, tr);
+          }
         }
       }
     }
@@ -1272,6 +1322,11 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_END_BLOCK_OPT, bpo::value<uint32_t>()->default_value(std::numeric_limits<uint32_t>::max()),
      "Stop receiver before this block number")
     (RCV_STALE_DEADLINE_OPT, bpo::value<uint32_t>()->default_value(10000), "Stale socket deadline, msec")
+    (RCV_ENABLE_RCVR_FILTER_OPT, bpo::value<bool>()->default_value(false), "Filter traces by receiver account")
+    (RCV_INCLUDE_RECEIVER_OPT, bpo::value<vector<string>>(), "Account(s) to match in action receipts")
+    (RCV_ENABLE_AUTH_FILTER_OPT, bpo::value<bool>()->default_value(false), "Filter traces by authorizer")
+    (RCV_INCLUDE_AUTH_OPT, bpo::value<vector<string>>(), "Account(s) to match in authorizers")
+    (RCV_BLACKLIST_ACTION_OPT, bpo::value<vector<string>>(), "contract:action to exclude from traces")
     ;
 }
 
@@ -1383,9 +1438,89 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 
     my->stale_check_deadline_msec = options.at(RCV_STALE_DEADLINE_OPT).as<uint32_t>();
 
-    my->blacklist_actions.emplace
-      (std::make_pair(abieos::name("eosio"),
-                      std::set<abieos::name>{abieos::name("onblock")} ));
+    my->enable_rcvr_filter = options.at(RCV_ENABLE_RCVR_FILTER_OPT).as<bool>();
+    if( my->enable_rcvr_filter ) {
+      ilog("Enabled receiver filter:");
+
+      if( !options.count(RCV_INCLUDE_RECEIVER_OPT) ) {
+        throw std::runtime_error("Need at least one name in include-receiver option");
+      }
+
+      auto filter_accs = options.at(RCV_INCLUDE_RECEIVER_OPT).as<vector<string>>();
+        
+      for(string accstr : filter_accs) {
+        uint64_t accname;
+        if( !string_to_name_strict(accstr, accname) ) {
+          throw std::runtime_error(string("Invalid account name: ") + accstr);
+        }
+        
+        my->rcvr_filter.insert(accname);
+        ilog("  filtering on account: ${a}", ("a",accstr));
+      }
+    }
+
+    my->enable_auth_filter = options.at(RCV_ENABLE_AUTH_FILTER_OPT).as<bool>();
+    if( my->enable_auth_filter ) {
+      ilog("Enabled authorizer filter:");
+
+      if( !options.count(RCV_INCLUDE_AUTH_OPT) ) {
+        throw std::runtime_error("Need at least one name in include-auth option");
+      }
+
+      auto filter_accs = options.at(RCV_INCLUDE_AUTH_OPT).as<vector<string>>();
+        
+      for(string accstr : filter_accs) {
+        uint64_t accname;
+        if( !string_to_name_strict(accstr, accname) ) {
+          throw std::runtime_error(string("Invalid account name: ") + accstr);
+        }
+        
+        my->auth_filter.insert(accname);
+        ilog("  filtering on authorizer: ${a}", ("a",accstr));
+      }
+    }
+
+    my->do_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
+      
+    vector<string> blacklist_str({string("eosio:onblock")});
+
+    if( options.count(RCV_BLACKLIST_ACTION_OPT) ) {
+      auto blacklist_entries = options.at(RCV_BLACKLIST_ACTION_OPT).as<vector<string>>();
+      for(string bl_entry : blacklist_entries) {
+        blacklist_str.emplace_back(bl_entry);
+      }
+    }
+    
+    for( auto blpair : blacklist_str ) {
+      std::vector<std::string> parts;
+      boost::split( parts, blpair, boost::is_any_of(":"));
+      if( parts.size() != 2 )
+        throw std::runtime_error(string("Invalid blacklist entry: ") + blpair);
+
+      std::vector<uint64_t> parts_n;
+      for( auto s : parts ) {
+        uint64_t v;
+        if( !string_to_name_strict(s, v) ) {
+          throw std::runtime_error(string("Invalid name: ") + s);
+        }
+        parts_n.emplace_back(v);
+      }
+
+      my->blacklist_actions[parts_n[0]].insert(parts_n[1]);
+    }
+
+    for( auto itr_contract = my->blacklist_actions.begin();
+         itr_contract != my->blacklist_actions.end();
+         ++itr_contract ) {
+      
+      for( auto itr_action = itr_contract->second.begin();
+           itr_action != itr_contract->second.end();
+           ++itr_action ) {
+        ilog("Action blacklist entry: ${c}:${a}",
+             ("c", name_to_string(itr_contract->first))("a", name_to_string(*itr_action)));
+      }
+    }
+    
     my->init();
     ilog("Initialized receiver_plugin");
   }
