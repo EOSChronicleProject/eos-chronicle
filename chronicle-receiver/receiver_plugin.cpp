@@ -153,7 +153,7 @@ namespace chronicle {
     uint64_t                  account;
     chainbase::shared_string  abi;
 
-    void set_abi(const std::vector<char> data) {
+    void set_abi(const vector<char> data) {
       abi.resize(data.size(), {});
       abi.assign(data.data(), data.size());
     }
@@ -177,7 +177,7 @@ namespace chronicle {
     uint32_t                  block_index;
     chainbase::shared_string  abi;
 
-    void set_abi(const std::vector<char> data) {
+    void set_abi(const vector<char> data) {
       abi.resize(data.size(), {});
       abi.assign(data.data(), data.size());
     }
@@ -988,12 +988,12 @@ public:
         _abi_removals_chan.publish(channel_priority, ar);
       }
     }
-    save_contract_abi_history(account, std::vector<char>());
+    save_contract_abi_history(account, vector<char>());
   }
 
 
 
-  void save_contract_abi(name account, std::vector<char> data) {
+  void save_contract_abi(name account, vector<char> data) {
     // dlog("Saving contract ABI for ${a}", ("a",(std::string)account));
     if( contract_abi_imported.count(account.value) > 0 ) {
       init_contract_abi_ctxt();
@@ -1049,7 +1049,7 @@ public:
   }
 
 
-  void save_contract_abi_history(name account, std::vector<char> data) {
+  void save_contract_abi_history(name account, vector<char> data) {
     const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block>();
     auto itr = idx.find(boost::make_tuple(account.value, head));
     if( itr != idx.end() ) {
@@ -1386,9 +1386,6 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->blacklist_actions.emplace
       (std::make_pair(abieos::name("eosio"),
                       std::set<abieos::name>{abieos::name("onblock")} ));
-    my->blacklist_actions.emplace
-      (std::make_pair(abieos::name("blocktwitter"),
-                      std::set<abieos::name>{abieos::name("tweet")} ));
     my->init();
     ilog("Initialized receiver_plugin");
   }
