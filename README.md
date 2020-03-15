@@ -193,17 +193,20 @@ integers separated by minus sign (-) indicating a range of blocks.
 
 Minimum requirements: Cmake 3.11, Boost 1.67, GCC 8.3.0.
 
+As of now, Chronicle cannot compile with Boost 1.71. This will be
+fixed in the future.
+
 3GB RAM is required for successful compilation. Smaller RAM will cause
 heavy swapping during the compilation.
 
-Ubuntu 18.10 instructions:
+Ubuntu 19.10 instructions:
 
 
 ```
 sudo apt update && \
 sudo apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test-dev \
  libboost-filesystem-dev libboost-date-time-dev libboost-system-dev libboost-iostreams-dev \
- libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev
+ libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev zlib1g-dev
 
 mkdir build
 cd build
@@ -215,6 +218,7 @@ cd build
 cmake ..
 # use "make -j N" for N CPU cores for faster compiling (may require more RAM)
 make
+sudo make install
 ```
 
 Ubuntu 18.04 instructions:
@@ -248,6 +252,7 @@ cd build
 cmake ..
 # use "make -j N" for N CPU cores for faster compiling (may require more RAM)
 make
+sudo make install
 ```
 
 
@@ -281,7 +286,11 @@ Similarly to `nodeos`, `chronicle-receiver` needs a configuration
 directory with `config.ini` in it, and a data directory where it stores
 its internal state.
 
-Further on, we use Linux user `eosio` for running the receiver, and
+See the [Chronicle
+tutorial](https://github.com/EOSChronicleProject/chronicle-tutorial)
+for a more detailed and complete example.
+
+Further in this example, we use Linux user `eosio` for running the receiver, and
 `/home/eosio/chronicle-config` as configuration directory, although you
 may choose other names.
 
@@ -289,8 +298,11 @@ Here's a minimal configuration for the receiver using Websocket
 exporter. It connects to `nodeos` process running `state_history_plugin`
 at `localhost:8080` and exports the data to a websocket server at
 `localhost:8800`. In a production environment, hosts may be different
-machines in the network. The example is using bidirectional mode and
-default queue sizes.
+machines in the network.
+
+The example introduces a custom systemd unit file. Chronicle
+distribution offers also `systemd/chronicle_receiver\@.service` that
+can be used in production.
 
 The receiver would stop immediately if the websocket server is not
 responding. For further tests, you need a consumer server ready.
@@ -314,17 +326,17 @@ EOT
 
 # Start the receiver to check that everything is working as
 # expected. Use Ctrl-C to stop it.
-/home/eosio/build/eos-chronicle/build/chronicle-receiver \
+/usr/local/sbin/chronicle-receiver \
   --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
 
 # Prepare for long-term run inside a systemd unit
 
-cat >chronicle-config/chronicle-receiver.service <<'EOT'
+cat >/home/eosio/chronicle-config/chronicle-receiver.service <<'EOT'
 [Unit]
 Description=EOS Chronicle receiver
 [Service]
 Type=simple
-ExecStart=/home/eosio/build/eos-chronicle/build/chronicle-receiver --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
+ExecStart=/usr/local/sbin/chronicle-receiver --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
 TimeoutStopSec=300s
 Restart=on-success
 RestartSec=10
@@ -335,7 +347,7 @@ KillMode=control-group
 WantedBy=multi-user.target
 EOT
 
-sudo cp chronicle-config/chronicle-receiver.service /etc/systemd/system/
+sudo cp /home/eosio/chronicle-config/chronicle-receiver.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable chronicle-receiver
 sudo systemctl start chronicle-receiver
@@ -343,7 +355,8 @@ sudo systemctl start chronicle-receiver
 sudo systemctl status chronicle-receiver
 ```
 
-Only one exporter plugin can be activated at a time.
+Only one exporter plugin can be activated at a time (as of now, only
+one is implemented, but it can be changed in the future).
 
 If you need to move or copy the state data, flush the system cache first:
 
@@ -511,7 +524,18 @@ nodeos-1.7.
 
 
 
-# Third-party software
+# Ecosystem links
+
+* [Chronicle
+  tutorial](https://github.com/EOSChronicleProject/chronicle-tutorial)
+  explains the nodeos and Chronicle server installation in detail.
+
+* [chronicle-consumer-npm](https://github.com/EOSChronicleProject/chronicle-consumer-npm)
+  is a Node.js module that consumer processes can be based on.
+
+* [chronicle-consumer-npm
+  examples](https://github.com/EOSChronicleProject/chronicle-consumer-npm-examples)
+  is a number of examples using the Node.js module.
 
 * [Awesome
 Chronicle](https://github.com/EOSChronicleProject/awesome-chronicle)
