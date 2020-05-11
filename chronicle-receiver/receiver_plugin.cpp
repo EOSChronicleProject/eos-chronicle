@@ -916,7 +916,7 @@ public:
 
             string error;
             if (!bin_to_native(tru->kvo, error, row.data))
-              throw runtime_error("cannot read table row object" + error);
+              throw runtime_error("cannot read table row object: " + error);
             if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
               tru->added = row.present;
               _table_row_updates_chan.publish(channel_priority, tru);
@@ -939,7 +939,7 @@ public:
             pu->buffer = p;
             string error;
             if (!bin_to_native(pu->permission, error, row.data))
-              throw runtime_error("cannot read permission object" + error);
+              throw runtime_error("cannot read permission object: " + error);
             pu->added = row.present;
             _permission_updates_chan.publish(channel_priority, pu);
           }
@@ -952,7 +952,7 @@ public:
             plu->buffer = p;
             string error;
             if (!bin_to_native(plu->permission_link, error, row.data))
-              throw runtime_error("cannot read permission_link object" + error);
+              throw runtime_error("cannot read permission_link object: " + error);
             plu->added = row.present;
             _permission_link_updates_chan.publish(channel_priority, plu);
           }
@@ -965,7 +965,7 @@ public:
             amu->buffer = p;
             string error;
             if (!bin_to_native(amu->account_metadata, error, row.data))
-              throw runtime_error("cannot read account_metadata object" + error);
+              throw runtime_error("cannot read account_metadata object: " + error);
             _account_metadata_updates_chan.publish(channel_priority, amu);
           }
         }
