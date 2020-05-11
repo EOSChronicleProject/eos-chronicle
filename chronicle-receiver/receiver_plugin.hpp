@@ -1,6 +1,6 @@
 #include <appbase/application.hpp>
-#include "chain_state_types.hpp"
-#include "state_history.hpp"
+#include <eosio/ship_protocol.hpp>
+#include <abieos.hpp>
 #include <abieos.h>
 #include <boost/beast/core/flat_buffer.hpp>
 
@@ -37,13 +37,7 @@ namespace chronicle {
       uint32_t         last_irreversible;
     };
 
-    template <typename F>
-    constexpr void for_each_field(fork_event*, F f) {
-      f("block_num", member_ptr<&fork_event::fork_block_num>{});
-      f("depth", member_ptr<&fork_event::depth>{});
-      f("fork_reason", member_ptr<&fork_event::fork_reason>{});
-      f("last_irreversible", member_ptr<&fork_event::last_irreversible>{});
-    }
+    EOSIO_REFLECT(fork_event, fork_block_num, depth, fork_reason, last_irreversible);
 
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
 
@@ -51,33 +45,22 @@ namespace chronicle {
       uint32_t                             block_num;
       abieos::checksum256                  block_id;
       uint32_t                             last_irreversible;
-      state_history::signed_block          block;
+      eosio::ship_protocol::signed_block   block;
       std::shared_ptr<flat_buffer>         buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(block*, F f) {
-      f("block_num", member_ptr<&block::block_num>{});
-      f("block_id", member_ptr<&block::block_id>{});
-      f("last_irreversible", member_ptr<&block::last_irreversible>{});
-      f("block", member_ptr<&block::block>{});
-    }
+    EOSIO_REFLECT(block, block_num, block_id, last_irreversible, block);
 
     using blocks    = channel_decl<struct blocks_tag, std::shared_ptr<block>>;
 
     struct block_table_delta {
       uint32_t                                   block_num;
       abieos::block_timestamp                    block_timestamp;
-      state_history::table_delta_v0              table_delta;
+      eosio::ship_protocol::table_delta          table_delta;
       std::shared_ptr<flat_buffer>               buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(block_table_delta*, F f) {
-      f("block_num", member_ptr<&block_table_delta::block_num>{});
-      f("block_timestamp", member_ptr<&block_table_delta::block_timestamp>{});
-      f("table_delta", member_ptr<&block_table_delta::table_delta>{});
-    }
+    EOSIO_REFLECT(block_table_delta, block_num, block_timestamp, table_delta);
 
     using block_table_deltas  =
       channel_decl<struct block_table_deltas_tag, std::shared_ptr<block_table_delta>>;
@@ -85,16 +68,11 @@ namespace chronicle {
     struct transaction_trace {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
-      state_history::transaction_trace         trace;
+      eosio::ship_protocol::transaction_trace  trace;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(transaction_trace*, F f) {
-      f("block_num", member_ptr<&transaction_trace::block_num>{});
-      f("block_timestamp", member_ptr<&transaction_trace::block_timestamp>{});
-      f("trace", member_ptr<&transaction_trace::trace>{});
-    }
+    EOSIO_REFLECT(transaction_trace, block_num, block_timestamp, trace);
 
     using transaction_traces = channel_decl<struct transaction_traces_tag, std::shared_ptr<transaction_trace>>;
 
@@ -106,14 +84,7 @@ namespace chronicle {
       abieos::abi_def                 abi;
     };
 
-    template <typename F>
-    constexpr void for_each_field(abi_update*, F f) {
-      f("block_num", member_ptr<&abi_update::block_num>{});
-      f("block_timestamp", member_ptr<&abi_update::block_timestamp>{});
-      f("account", member_ptr<&abi_update::account>{});
-      f("abi_bytes", member_ptr<&abi_update::abi_bytes>{});
-      f("abi", member_ptr<&abi_update::abi>{});
-    }
+    EOSIO_REFLECT(abi_update, block_num, block_timestamp, account, abi_bytes, abi);
 
     using abi_updates = channel_decl<struct abi_updates_tag, std::shared_ptr<abi_update>>;
 
@@ -123,12 +94,7 @@ namespace chronicle {
       abieos::name                    account;
     };
 
-    template <typename F>
-    constexpr void for_each_field(abi_removal*, F f) {
-      f("block_num", member_ptr<&abi_removal::block_num>{});
-      f("block_timestamp", member_ptr<&abi_removal::block_timestamp>{});
-      f("account", member_ptr<&abi_removal::account>{});
-    }
+    EOSIO_REFLECT(abi_removal, block_num, block_timestamp, account);
 
     using abi_removals = channel_decl<struct abi_removals_tag, std::shared_ptr<abi_removal>>;
 
@@ -139,13 +105,7 @@ namespace chronicle {
       string                          error;
     };
 
-    template <typename F>
-    constexpr void for_each_field(abi_error*, F f) {
-      f("block_num", member_ptr<&abi_error::block_num>{});
-      f("block_timestamp", member_ptr<&abi_error::block_timestamp>{});
-      f("account", member_ptr<&abi_error::account>{});
-      f("error", member_ptr<&abi_error::error>{});
-    }
+    EOSIO_REFLECT(abi_error, block_num, block_timestamp, account, error);
 
     using abi_errors = channel_decl<struct abi_errors_tag, std::shared_ptr<abi_error>>;
 
@@ -153,17 +113,11 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
-      chain_state::key_value_object            kvo;
+      eosio::ship_protocol::contract_row       kvo;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(table_row_update*, F f) {
-      f("block_num", member_ptr<&table_row_update::block_num>{});
-      f("block_timestamp", member_ptr<&table_row_update::block_timestamp>{});
-      f("added", member_ptr<&table_row_update::added>{});
-      f("kvo", member_ptr<&table_row_update::kvo>{});
-    }
+    EOSIO_REFLECT(table_row_update, block_num, block_timestamp, added, kvo);
 
     using table_row_updates = channel_decl<struct table_row_updates_tag, std::shared_ptr<table_row_update>>;
 
@@ -171,17 +125,11 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
-      chain_state::permission_object           permission;
+      eosio::ship_protocol::permission         permission;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(permission_update*, F f) {
-      f("block_num", member_ptr<&permission_update::block_num>{});
-      f("block_timestamp", member_ptr<&permission_update::block_timestamp>{});
-      f("added", member_ptr<&permission_update::added>{});
-      f("permission", member_ptr<&permission_update::permission>{});
-    }
+    EOSIO_REFLECT(permission_update, block_num, block_timestamp, added, permission);
 
     using permission_updates = channel_decl<struct permission_updates_tag, std::shared_ptr<permission_update>>;
 
@@ -190,17 +138,11 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
-      chain_state::permission_link_object      permission_link;
+      eosio::ship_protocol::permission_link    permission_link;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(permission_link_update*, F f) {
-      f("block_num", member_ptr<&permission_link_update::block_num>{});
-      f("block_timestamp", member_ptr<&permission_link_update::block_timestamp>{});
-      f("added", member_ptr<&permission_link_update::added>{});
-      f("permission_link", member_ptr<&permission_link_update::permission_link>{});
-    }
+    EOSIO_REFLECT(permission_link_update, block_num, block_timestamp, added, permission_link);
 
     using permission_link_updates =
       channel_decl<struct permission_link_updates_tag, std::shared_ptr<permission_link_update>>;
@@ -209,16 +151,11 @@ namespace chronicle {
     struct account_metadata_update {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
-      chain_state::account_metadata_object     account_metadata;
+      eosio::ship_protocol::account_metadata   account_metadata;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
-    template <typename F>
-    constexpr void for_each_field(account_metadata_update*, F f) {
-      f("block_num", member_ptr<&account_metadata_update::block_num>{});
-      f("block_timestamp", member_ptr<&account_metadata_update::block_timestamp>{});
-      f("account_metadata", member_ptr<&account_metadata_update::account_metadata>{});
-    }
+    EOSIO_REFLECT(account_metadata_update, block_num, block_timestamp, account_metadata);
 
     using account_metadata_updates =
       channel_decl<struct account_metadata_updates_tag, std::shared_ptr<account_metadata_update>>;
@@ -228,11 +165,7 @@ namespace chronicle {
       uint32_t                           acknowledged;
     };
 
-    template <typename F>
-    constexpr void for_each_field(receiver_pause*, F f) {
-      f("head", member_ptr<&receiver_pause::head>{});
-      f("acknowledged", member_ptr<&receiver_pause::acknowledged>{});
-    }
+    EOSIO_REFLECT(receiver_pause, head, acknowledged);
 
     using receiver_pauses = channel_decl<struct receiver_pauses_tag, std::shared_ptr<receiver_pause>>;
 
@@ -243,13 +176,7 @@ namespace chronicle {
       uint32_t                        last_irreversible;
     };
 
-    template <typename F>
-    constexpr void for_each_field(block_finished*, F f) {
-      f("block_num", member_ptr<&block_finished::block_num>{});
-      f("block_id", member_ptr<&block_finished::block_id>{});
-      f("block_timestamp", member_ptr<&block_finished::block_timestamp>{});
-      f("last_irreversible", member_ptr<&block_finished::last_irreversible>{});
-    }
+    EOSIO_REFLECT(block_finished, block_num, block_id, block_timestamp, last_irreversible);
 
     using block_completed = channel_decl<struct block_completed_tag, std::shared_ptr<block_finished>>;
 

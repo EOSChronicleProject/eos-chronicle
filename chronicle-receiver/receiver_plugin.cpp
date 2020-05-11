@@ -39,9 +39,6 @@ using namespace abieos;
 using namespace appbase;
 using namespace std::literals;
 
-using namespace chain_state;
-using namespace state_history;
-
 using std::enable_shared_from_this;
 using std::exception;
 using std::make_shared;
@@ -570,11 +567,10 @@ public:
 
 
   void receive_abi(const shared_ptr<flat_buffer> p) {
-    auto data = p->data();
+    std::string json((const char*)p->data().data(), p->data().size());
     std::string error;
-    abi_def abi{};
-    if (!json_to_native(abi, error, string_view{(const char*)data.data(), data.size()}))
-      throw runtime_error("abi parse error: " + error);
+    eosio::json_token_stream stream((char*)json.data());
+    eosio::abi_def abi = eosio::from_json<eosio::abi_def>(stream);
     if( !check_abi_version(abi.version, error) )
       throw runtime_error("abi version error: " + error);
     abieos::contract c;
@@ -676,11 +672,11 @@ public:
 
   bool receive_result(const shared_ptr<flat_buffer> p) {
     auto         data = p->data();
-    input_buffer bin{(const char*)data.data(), (const char*)data.data() + data.size()};
+    eosio::input_stream bin{(const char*)data.data(), (const char*)data.data() + data.size()};
     check_variant(bin, get_type("result"), "get_blocks_result_v0");
 
     string error;
-    get_blocks_result_v0 result;
+    eosio::ship_protocol::get_blocks_result_v0 result;
     if (!bin_to_native(result, error, bin))
       throw runtime_error("result conversion error: " + error);
 
@@ -836,7 +832,7 @@ public:
   }
 
 
-  void receive_block(input_buffer bin, const shared_ptr<flat_buffer>& p) {
+  void receive_block(eosio::input_stream bin, const shared_ptr<flat_buffer>& p) {
     if (head == irreversible && !irreversible_only) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
@@ -858,7 +854,7 @@ public:
 
 
 
-  void receive_deltas(input_buffer bin, const shared_ptr<flat_buffer>& p) {
+  void receive_deltas(eosio::input_stream bin, const shared_ptr<flat_buffer>& p) {
     uint32_t num;
     string error;
     if( !read_varuint32(bin, error, num) )
@@ -893,7 +889,7 @@ public:
         for (auto& row : bltd->table_delta.rows) {
           if (row.present) {
             string error;
-            account_object acc;
+            eosio::ship_protocol::account_v0 acc;
             if (!bin_to_native(acc, error, row.data))
               throw runtime_error("account row conversion error: " + error);
             if( acc.abi.data.size() == 0 ) {
@@ -1042,7 +1038,7 @@ public:
         abiupd->block_timestamp = block_timestamp;
         abiupd->account = account;
         abiupd->abi_bytes = bytes {data};
-        input_buffer buf{data.data(), data.data() + data.size()};
+        eosio::input_stream buf{data.data(), data.data() + data.size()};
         string error;
         if (!bin_to_native(abiupd->abi, error, buf))
           throw runtime_error(error);
@@ -1133,7 +1129,7 @@ public:
   }
 
 
-  void receive_traces(input_buffer bin, const shared_ptr<flat_buffer>& p) {
+  void receive_traces(eosio::input_stream bin, const shared_ptr<flat_buffer>& p) {
     if (_transaction_traces_chan.has_subscribers()) {
       uint32_t num;
       string       error;
@@ -1223,7 +1219,7 @@ public:
   }
 
 
-  void check_variant(input_buffer& bin, const abi_type& type, uint32_t expected) {
+  void check_variant(eosio::input_stream& bin, const abi_type& type, uint32_t expected) {
     string error;
     uint32_t index;
     if( !read_varuint32(bin, error, index) )
@@ -1237,7 +1233,7 @@ public:
   }
 
 
-  void check_variant(input_buffer& bin, const abi_type& type, const char* expected) {
+  void check_variant(eosio::input_stream& bin, const abi_type& type, const char* expected) {
     string error;
     uint32_t index;
     if( !read_varuint32(bin, error, index) )
