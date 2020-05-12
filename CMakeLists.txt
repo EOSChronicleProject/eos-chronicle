@@ -29,6 +29,7 @@ set(PLATFORM_SPECIFIC_LIBS pthread)
 
 set(CMAKE_BUILD_TYPE Debug)
 
+add_subdirectory(external/abieos)
 add_subdirectory(external/chainbase)
 add_subdirectory(external/appbase)
 add_subdirectory(external/fc)
@@ -52,8 +53,8 @@ include_directories(
   ${Boost_INCLUDE_DIR})
 
 target_link_libraries(chronicle-receiver
-  PRIVATE chainbase appbase fc
-  PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z pthread ${ZeroMQ_LIBRARY})
+  PRIVATE abieos chainbase appbase fc
+  PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z pthread)
 
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")

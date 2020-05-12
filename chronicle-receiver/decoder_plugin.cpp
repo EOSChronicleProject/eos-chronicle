@@ -18,10 +18,8 @@
 using namespace chronicle::channels;
 using namespace abieos;
 
-using namespace chain_state;
-using namespace state_history;
-
 using std::make_shared;
+using std::string;
 
 
 
@@ -37,7 +35,7 @@ namespace json_encoder {
     state.writer.String(str.data(), str.size());
   }
 
-  inline void native_to_json(const optional<std::string>& str, native_to_json_state& state) {
+  inline void native_to_json(const std::optional<std::string>& str, native_to_json_state& state) {
     if( str ) {
       state.writer.String(str.value().data(), str.value().size());
     }
@@ -47,23 +45,34 @@ namespace json_encoder {
   }
 
   inline void arithmetic_to_json(const uint64_t& v, native_to_json_state& state) {
-    string str = to_string(v);
+    string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
 
   inline void arithmetic_to_json(const int64_t& v, native_to_json_state& state) {
-    string str = to_string(v);
+    string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
 
   inline void arithmetic_to_json(const uint32_t& v, native_to_json_state& state) {
-    string str = to_string(v);
+    string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
 
   inline void arithmetic_to_json(const int32_t& v, native_to_json_state& state) {
-    string str = to_string(v);
+    string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const chronicle::channels::fork_reason_val& obj, native_to_json_state& state) {
+    std::string result = to_string(obj);
+    state.writer.String(result.data(), result.size());
+  }
+
+  inline void native_to_json(const checksum256& obj, native_to_json_state& state) {
+    const auto bytes = obj.extract_as_byte_array();
+    std::string result = fc::to_hex((const char*)bytes.data(), bytes.size());
+    state.writer.String(result.data(), result.size());
   }
 
   template <typename T>
@@ -74,42 +83,26 @@ namespace json_encoder {
     state.writer.EndArray();
   }
 
-  inline void native_to_json(const state_history::transaction_status& obj, native_to_json_state& state) {
-    std::string result = to_string(obj);
-    state.writer.String(result.data(), result.size());
-  }
-
-  inline void native_to_json(const chronicle::channels::fork_reason_val& obj, native_to_json_state& state) {
+  inline void native_to_json(const eosio::ship_protocol::transaction_status& obj, native_to_json_state& state) {
     std::string result = to_string(obj);
     state.writer.String(result.data(), result.size());
   }
 
   inline void native_to_json(const abieos::name& obj, native_to_json_state& state) {
-    std::string result = name_to_string(obj.value);
-    state.writer.String(result.data(), result.size());
-  }
-
-  inline void native_to_json(const abieos::bytes& obj, native_to_json_state& state) {
-    std::string result = fc::to_hex(obj.data.data(), obj.data.size());
+    std::string result = eosio::name_to_string(obj.value);
     state.writer.String(result.data(), result.size());
   }
 
   template <typename T>
-  inline void native_to_json(const abieos::might_not_exist<T>& obj, native_to_json_state& state) {
+  inline void native_to_json(const eosio::might_not_exist<T>& obj, native_to_json_state& state) {
     native_to_json(obj.value, state);
   }
 
-  inline void native_to_json(const abieos::input_buffer& obj, native_to_json_state& state) {
-    std::string result = fc::to_hex(obj.pos, obj.end-obj.pos);
+  inline void native_to_json(const eosio::input_stream& obj, native_to_json_state& state) {
+    std::string result = fc::to_hex(obj.get_pos(), obj.remaining());
     state.writer.String(result.data(), result.size());
   }
-
-  template <unsigned size>
-  inline void native_to_json(const fixed_binary<size>& obj, native_to_json_state& state) {
-    std::string result = fc::to_hex((const char*)obj.value.data(), obj.value.size());
-    state.writer.String(result.data(), result.size());
-  }
-
+  
   inline void native_to_json(const bool& obj, native_to_json_state& state) {
     const char* str = obj ? "true" : "false";
     state.writer.String(str);
@@ -119,9 +112,9 @@ namespace json_encoder {
     arithmetic_to_json(obj.value, state);
   }
 
-  inline void native_to_json(const state_history::action& obj, native_to_json_state& state) {
+  inline void native_to_json(eosio::ship_protocol::action& obj, native_to_json_state& state) {
     state.writer.StartObject();
-    for_each_field((state_history::action*)nullptr, [&](auto* name, auto member_ptr) {
+    eosio::for_each_field<eosio::ship_protocol::action>([&](const char* name, auto&& member) {
         state.writer.Key(name);
         if( string("data") == name ) {
           // encode action data according to ABI
@@ -132,13 +125,13 @@ namespace json_encoder {
               action_type = abieos_name_to_string(ctxt, obj.name.value);
             try {
               const char* datajs = abieos_bin_to_json(ctxt, obj.account.value, action_type,
-                                                      obj.data.pos, obj.data.end-obj.data.pos);
+                                                      obj.data.get_pos(), obj.data.remaining());
               if( datajs == nullptr )
-                throw runtime_error("abieos_bin_to_json returned null");
+                throw std::runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(datajs, strlen(datajs), rapidjson::kObjectType);
             }
             catch (...) {
-              throw runtime_error(abieos_get_error(ctxt));
+              throw std::runtime_error(abieos_get_error(ctxt));
             }
           }
           catch ( const std::exception& e  ) {
@@ -153,7 +146,7 @@ namespace json_encoder {
           }
         }
         else {
-          native_to_json(member_from_void(member_ptr, &obj), state);
+          native_to_json(member(&obj), state);
         }
       });
     state.writer.EndObject();
@@ -162,9 +155,9 @@ namespace json_encoder {
 
 
 
-  inline void native_to_json(const chain_state::key_value_object& obj, native_to_json_state& state) {
+  inline void native_to_json(eosio::ship_protocol::contract_row_v0& obj, native_to_json_state& state) {
     state.writer.StartObject();
-    for_each_field((chain_state::key_value_object*)nullptr, [&](auto* name, auto member_ptr) {
+    eosio::for_each_field<eosio::ship_protocol::contract_row_v0>([&](const char* name, auto&& member) {
         state.writer.Key(name);
         if( string("value") == name ) {
           // encode table row according to ABI
@@ -175,13 +168,13 @@ namespace json_encoder {
               table_type = abieos_name_to_string(ctxt, obj.table.value);
             try {
               const char* valjs = abieos_bin_to_json(ctxt, obj.code.value, table_type,
-                                                     obj.value.pos, obj.value.end-obj.value.pos);
+                                                     obj.value.get_pos(), obj.value.remaining());
               if( valjs == nullptr )
-                throw runtime_error("abieos_bin_to_json returned null");
+                throw std::runtime_error("abieos_bin_to_json returned null");
               state.writer.RawValue(valjs, strlen(valjs), rapidjson::kObjectType);
             }
             catch (...) {
-              throw runtime_error(abieos_get_error(ctxt));
+              throw std::runtime_error(abieos_get_error(ctxt));
             }
           }
           catch ( const std::exception& e ) {
@@ -196,7 +189,7 @@ namespace json_encoder {
           }
         }
         else {
-          native_to_json(member_from_void(member_ptr, &obj), state);
+          native_to_json(member(&obj), state);
         }
       });
     state.writer.EndObject();
@@ -221,34 +214,23 @@ namespace json_encoder {
     state.writer.EndArray();
   }
 
-  inline void native_to_json(const abieos::block_timestamp& obj, native_to_json_state& state) {
-    string str = string(obj);
+  inline void native_to_json(const eosio::block_timestamp& obj, native_to_json_state& state) {
+    string str = eosio::microseconds_to_str(obj.to_time_point().elapsed.count());
     state.writer.String(str.data(), str.length());
   }
 
-  inline void native_to_json(const abieos::time_point_sec& obj, native_to_json_state& state) {
-    string str = string(obj);
+  inline void native_to_json(const eosio::time_point& obj, native_to_json_state& state) {
+    string str = eosio::microseconds_to_str(obj.elapsed.count());
     state.writer.String(str.data(), str.length());
   }
 
-  inline void native_to_json(const abieos::time_point& obj, native_to_json_state& state) {
-    string str = string(obj);
+  inline void native_to_json(const eosio::public_key& obj, native_to_json_state& state) {
+    string str = eosio::public_key_to_string(obj);
     state.writer.String(str.data(), str.length());
   }
 
-  inline void native_to_json(const abieos::public_key& obj, native_to_json_state& state) {
-    string str;
-    string error;
-    if (!public_key_to_string(str, error, obj))
-      throw runtime_error(error);
-    state.writer.String(str.data(), str.length());
-  }
-
-  inline void native_to_json(const abieos::signature& obj, native_to_json_state& state) {
-    string str;
-    string error;
-    if (!signature_to_string(str, error, obj))
-      throw runtime_error(error);
+  inline void native_to_json(const eosio::signature& obj, native_to_json_state& state) {
+    string str = eosio::signature_to_string(obj);
     state.writer.String(str.data(), str.length());
   }
 
@@ -256,9 +238,9 @@ namespace json_encoder {
   void native_to_json(const T& obj, native_to_json_state& state) {
     if constexpr (std::is_class_v<T>) {
         state.writer.StartObject();
-        for_each_field((T*)nullptr, [&](auto* name, auto member_ptr) {
+        eosio::for_each_field<T>([&](const char* name, auto&& member) {
             state.writer.Key(name);
-            native_to_json(member_from_void(member_ptr, &obj), state);
+            native_to_json(member(&obj), state);
           });
         state.writer.EndObject();
       }
@@ -269,53 +251,53 @@ namespace json_encoder {
   }
 
   template
-  void native_to_json<state_history::action_receipt_v0>(const state_history::action_receipt_v0&,
-                                                        native_to_json_state&);
-
+  void native_to_json<eosio::ship_protocol::action_receipt_v0>(const eosio::ship_protocol::action_receipt_v0&,
+                                                               native_to_json_state&);
+  
   template
-  void native_to_json<state_history::action_trace_v0>(const state_history::action_trace_v0&,
-                                                      native_to_json_state&);
-
-  template
-  void native_to_json<state_history::partial_transaction_v0>(const state_history::partial_transaction_v0&,
+  void native_to_json<eosio::ship_protocol::action_trace_v0>(const eosio::ship_protocol::action_trace_v0&,
                                                              native_to_json_state&);
 
   template
-  void native_to_json<state_history::transaction_trace_v0>(const state_history::transaction_trace_v0&,
-                                                           native_to_json_state&);
+  void native_to_json<eosio::ship_protocol::partial_transaction_v0>(const eosio::ship_protocol::partial_transaction_v0&,
+                                                                    native_to_json_state&);
 
   template
-  void native_to_json<state_history::packed_transaction>(const state_history::packed_transaction&,
-                                                         native_to_json_state&);
+  void native_to_json<eosio::ship_protocol::transaction_trace_v0>(const eosio::ship_protocol::transaction_trace_v0&,
+                                                                  native_to_json_state&);
 
-  inline void native_to_json(const state_history::action_receipt& obj, native_to_json_state& state) {
-    native_to_json(std::get<state_history::action_receipt_v0>(obj), state);
+  template
+  void native_to_json<eosio::ship_protocol::packed_transaction>(const eosio::ship_protocol::packed_transaction&,
+                                                                native_to_json_state&);
+  
+  inline void native_to_json(const eosio::ship_protocol::action_receipt& obj, native_to_json_state& state) {
+    native_to_json(std::get<eosio::ship_protocol::action_receipt_v0>(obj), state);
   }
-
-  inline void native_to_json(const state_history::action_trace& obj, native_to_json_state& state) {
-    native_to_json(std::get<state_history::action_trace_v0>(obj), state);
+  
+  inline void native_to_json(const eosio::ship_protocol::action_trace& obj, native_to_json_state& state) {
+    native_to_json(std::get<eosio::ship_protocol::action_trace_v0>(obj), state);
   }
-
-  inline void native_to_json(const state_history::partial_transaction& obj, native_to_json_state& state) {
-    native_to_json(std::get<state_history::partial_transaction_v0>(obj), state);
+  
+  inline void native_to_json(const eosio::ship_protocol::partial_transaction& obj, native_to_json_state& state) {
+    native_to_json(std::get<eosio::ship_protocol::partial_transaction_v0>(obj), state);
   }
-
-  inline void native_to_json(const state_history::transaction_trace& obj, native_to_json_state& state) {
-    native_to_json(std::get<state_history::transaction_trace_v0>(obj), state);
+  
+  inline void native_to_json(const eosio::ship_protocol::transaction_trace& obj, native_to_json_state& state) {
+    native_to_json(std::get<eosio::ship_protocol::transaction_trace_v0>(obj), state);
   }
-
-  inline void native_to_json(const state_history::recurse_transaction_trace& obj, native_to_json_state& state) {
+  
+  inline void native_to_json(const eosio::ship_protocol::recurse_transaction_trace& obj, native_to_json_state& state) {
     native_to_json(obj.recurse, state);
   }
+  
 
-
-  inline void native_to_json(const state_history::transaction_variant& obj, native_to_json_state& state) {
+  inline void native_to_json(const eosio::ship_protocol::transaction_variant& obj, native_to_json_state& state) {
     if( obj.index() == 0 ) {
       const checksum256& v = std::get<checksum256>(obj);
       native_to_json(v, state);
     }
     else {
-      const packed_transaction& v = std::get<packed_transaction>(obj);
+      const eosio::ship_protocol::packed_transaction& v = std::get<eosio::ship_protocol::packed_transaction>(obj);
       native_to_json(v, state);
     }
   }
@@ -504,8 +486,8 @@ public:
       map<string, string> attrs;
       attrs["where"] = "transaction_trace";
       attrs["block_num"] = std::to_string(ccttr->block_num);
-      attrs["block_timestamp"] = string(ccttr->block_timestamp);
-      auto& trace = std::get<state_history::transaction_trace_v0>(ccttr->trace);
+      attrs["block_timestamp"] = eosio::microseconds_to_str(ccttr->block_timestamp.to_time_point().elapsed.count());
+      auto& trace = std::get<eosio::ship_protocol::transaction_trace_v0>(ccttr->trace);
       attrs["trx_id"] = fc::to_hex((const char*)trace.id.value.data(), trace.id.value.size());
       report_encoder_errors(encoder_errors, attrs);
     }
@@ -538,7 +520,7 @@ public:
       map<string, string> attrs;
       attrs["where"] = "table_row_update";
       attrs["block_num"] = std::to_string(trupd->block_num);
-      attrs["block_timestamp"] = string(trupd->block_timestamp);
+      attrs["block_timestamp"] = eosio::microseconds_to_str(trupd->block_timestamp.to_time_point().elapsed.count());
       attrs["added"] = trupd->added ? "true":"false";
       attrs["code"] = string(trupd->kvo.code);
       attrs["scope"] = string(trupd->kvo.scope);

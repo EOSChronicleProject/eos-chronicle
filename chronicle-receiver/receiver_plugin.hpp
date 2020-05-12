@@ -56,7 +56,7 @@ namespace chronicle {
     struct block_table_delta {
       uint32_t                                   block_num;
       abieos::block_timestamp                    block_timestamp;
-      eosio::ship_protocol::table_delta          table_delta;
+      eosio::ship_protocol::table_delta_v0       table_delta;
       std::shared_ptr<flat_buffer>               buffer;
     };
 
@@ -80,11 +80,10 @@ namespace chronicle {
       uint32_t                        block_num;
       abieos::block_timestamp         block_timestamp;
       abieos::name                    account;
-      abieos::bytes                   abi_bytes;
       abieos::abi_def                 abi;
     };
 
-    EOSIO_REFLECT(abi_update, block_num, block_timestamp, account, abi_bytes, abi);
+    EOSIO_REFLECT(abi_update, block_num, block_timestamp, account, abi);
 
     using abi_updates = channel_decl<struct abi_updates_tag, std::shared_ptr<abi_update>>;
 
@@ -113,7 +112,7 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
-      eosio::ship_protocol::contract_row       kvo;
+      eosio::ship_protocol::contract_row_v0    kvo;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
@@ -125,7 +124,7 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
-      eosio::ship_protocol::permission         permission;
+      eosio::ship_protocol::permission_v0      permission;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
@@ -138,7 +137,7 @@ namespace chronicle {
       uint32_t                                 block_num;
       abieos::block_timestamp                  block_timestamp;
       bool                                     added; // false==removed
-      eosio::ship_protocol::permission_link    permission_link;
+      eosio::ship_protocol::permission_link_v0 permission_link;
       std::shared_ptr<flat_buffer>             buffer;
     };
 
@@ -149,10 +148,10 @@ namespace chronicle {
 
 
     struct account_metadata_update {
-      uint32_t                                 block_num;
-      abieos::block_timestamp                  block_timestamp;
-      eosio::ship_protocol::account_metadata   account_metadata;
-      std::shared_ptr<flat_buffer>             buffer;
+      uint32_t                                   block_num;
+      abieos::block_timestamp                    block_timestamp;
+      eosio::ship_protocol::account_metadata_v0  account_metadata;
+      std::shared_ptr<flat_buffer>               buffer;
     };
 
     EOSIO_REFLECT(account_metadata_update, block_num, block_timestamp, account_metadata);

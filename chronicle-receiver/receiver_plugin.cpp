@@ -156,9 +156,9 @@ namespace chronicle {
     uint64_t                  account;
     chainbase::shared_string  abi;
 
-    void set_abi(const vector<char> data) {
-      abi.resize(data.size(), {});
-      abi.assign(data.data(), data.size());
+    void set_abi(const eosio::input_stream& data) {
+      abi.resize(data.remaining(), {});
+      abi.assign(data.get_pos(), data.remaining());
     }
   };
 
@@ -180,9 +180,9 @@ namespace chronicle {
     uint32_t                  block_index;
     chainbase::shared_string  abi;
 
-    void set_abi(const vector<char> data) {
-      abi.resize(data.size(), {});
-      abi.assign(data.data(), data.size());
+    void set_abi(const eosio::input_stream& data) {
+      abi.resize(data.remaining(), {});
+      abi.assign(data.get_pos(), data.remaining());
     }
   };
 
@@ -567,16 +567,15 @@ public:
 
 
   void receive_abi(const shared_ptr<flat_buffer> p) {
-    std::string json((const char*)p->data().data(), p->data().size());
+    std::string json_copy((const char*)p->data().data(), p->data().size());
     std::string error;
-    eosio::json_token_stream stream((char*)json.data());
-    eosio::abi_def abi = eosio::from_json<eosio::abi_def>(stream);
-    if( !check_abi_version(abi.version, error) )
+    eosio::json_token_stream stream(json_copy.data());
+    eosio::abi_def abidef = eosio::from_json<eosio::abi_def>(stream);
+    if( !check_abi_version(abidef.version, error) )
       throw runtime_error("abi version error: " + error);
-    abieos::contract c;
-    if( !fill_contract(c, error, abi) )
-      throw runtime_error(error);
-    abi_types = std::move(c.abi_types);
+    abieos::abi abi;
+    convert(abidef, abi);
+    abi_types = std::move(abi.abi_types);
   }
 
 
@@ -587,10 +586,11 @@ public:
       const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
       auto itr = idx.lower_bound(irreversible);
       while( itr != idx.end() && itr->block_index <= head ) {
+        auto block_id_array = itr->block_id.extract_as_byte_array();
         positions.push_back(jvalue{jobject{
-              {{"block_num"s}, {std::to_string(itr->block_index)}},
-                {{"block_id"s}, {(string)itr->block_id}},
-                  }});
+                                           {{"block_num"s}, {std::to_string(itr->block_index)}},
+                                           {{"block_id"s}, {abieos::hex(block_id_array.begin(), block_id_array.end())}},
+                                           }});
         itr++;
       }
     }
@@ -677,9 +677,7 @@ public:
 
     string error;
     eosio::ship_protocol::get_blocks_result_v0 result;
-    if (!bin_to_native(result, error, bin))
-      throw runtime_error("result conversion error: " + error);
-
+    from_bin(result, bin);
     if (!result.this_block)
       return true;
 
@@ -832,7 +830,7 @@ public:
   }
 
 
-  void receive_block(eosio::input_stream bin, const shared_ptr<flat_buffer>& p) {
+  void receive_block(eosio::input_stream& bin, const shared_ptr<flat_buffer>& p) {
     if (head == irreversible && !irreversible_only) {
       ilog("Crossing irreversible block=${h}", ("h",head));
     }
@@ -843,9 +841,7 @@ public:
     block_ptr->last_irreversible = irreversible;
     block_ptr->buffer = p;
 
-    string error;
-    if (!bin_to_native(block_ptr->block, error, bin))
-      throw runtime_error("block conversion error: " + error);
+    from_bin(block_ptr->block, bin);
     block_timestamp = block_ptr->block.timestamp;
     if (!skip_block_events) {
       _blocks_chan.publish(channel_priority, block_ptr);
@@ -854,11 +850,9 @@ public:
 
 
 
-  void receive_deltas(eosio::input_stream bin, const shared_ptr<flat_buffer>& p) {
+  void receive_deltas(eosio::input_stream& bin, const shared_ptr<flat_buffer>& p) {
     uint32_t num;
-    string error;
-    if( !read_varuint32(bin, error, num) )
-      throw runtime_error(error);
+    varuint32_from_bin(num, bin);
     for (uint32_t i = 0; i < num; ++i) {
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
 
@@ -866,20 +860,19 @@ public:
       bltd->block_timestamp = block_timestamp;
       bltd->buffer = p;
 
-      string error;
-      if (!bin_to_native(bltd->table_delta, error, bin))
-        throw runtime_error("table_delta conversion error: " + error);
-
+      
+      from_bin(bltd->table_delta, bin);
       auto& variant_type = get_type(bltd->table_delta.name);
-      if( variant_type.fields.size() > 1 ) {
+
+      auto var = variant_type.as_variant();
+      if (!var || !var->at(0).type->as_struct())
+        throw std::runtime_error("don't know how to proccess " + variant_type.name);
+
+      if( var->size() > 1 ) {
         wlog("Variant type ${t} has more than one alternative, not supported yet", ("t", variant_type.name));
         continue;
       }
       
-      if (!variant_type.filled_variant || !variant_type.fields[0].type->filled_struct)
-        throw std::runtime_error("don't know how to proccess " + variant_type.name);
-      auto& type = *variant_type.fields[0].type;
-
       size_t num_processed = 0;
       for (auto& row : bltd->table_delta.rows) {
         check_variant(row.data, variant_type, 0u);
@@ -888,15 +881,13 @@ public:
       if ( !interactive_mode && bltd->table_delta.name == "account") {  // memorize contract ABI
         for (auto& row : bltd->table_delta.rows) {
           if (row.present) {
-            string error;
             eosio::ship_protocol::account_v0 acc;
-            if (!bin_to_native(acc, error, row.data))
-              throw runtime_error("account row conversion error: " + error);
-            if( acc.abi.data.size() == 0 ) {
+            from_bin(acc, row.data);
+            if( acc.abi.remaining() == 0 ) {
               clear_contract_abi(acc.name);
             }
             else {
-              save_contract_abi(acc.name, acc.abi.data);
+              save_contract_abi(acc.name, acc.abi);
             }
           }
         }
@@ -910,9 +901,7 @@ public:
             tru->block_timestamp = block_timestamp;
             tru->buffer = p;
 
-            string error;
-            if (!bin_to_native(tru->kvo, error, row.data))
-              throw runtime_error("cannot read table row object: " + error);
+            from_bin(tru->kvo, row.data);
             if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
               tru->added = row.present;
               _table_row_updates_chan.publish(channel_priority, tru);
@@ -933,9 +922,7 @@ public:
             pu->block_num = head;
             pu->block_timestamp = block_timestamp;
             pu->buffer = p;
-            string error;
-            if (!bin_to_native(pu->permission, error, row.data))
-              throw runtime_error("cannot read permission object: " + error);
+            from_bin(pu->permission, row.data);
             pu->added = row.present;
             _permission_updates_chan.publish(channel_priority, pu);
           }
@@ -946,9 +933,7 @@ public:
             plu->block_num = head;
             plu->block_timestamp = block_timestamp;
             plu->buffer = p;
-            string error;
-            if (!bin_to_native(plu->permission_link, error, row.data))
-              throw runtime_error("cannot read permission_link object: " + error);
+            from_bin(plu->permission_link, row.data);
             plu->added = row.present;
             _permission_link_updates_chan.publish(channel_priority, plu);
           }
@@ -959,9 +944,7 @@ public:
             amu->block_num = head;
             amu->block_timestamp = block_timestamp;
             amu->buffer = p;
-            string error;
-            if (!bin_to_native(amu->account_metadata, error, row.data))
-              throw runtime_error("cannot read account_metadata object: " + error);
+            from_bin(amu->account_metadata, row.data);
             _account_metadata_updates_chan.publish(channel_priority, amu);
           }
         }
@@ -998,12 +981,13 @@ public:
         _abi_removals_chan.publish(channel_priority, ar);
       }
     }
-    save_contract_abi_history(account, vector<char>());
+    eosio::input_stream empty_buf;
+    save_contract_abi_history(account, empty_buf);
   }
 
 
 
-  void save_contract_abi(name account, vector<char> data) {
+  void save_contract_abi(name account, eosio::input_stream& data) {
     // dlog("Saving contract ABI for ${a}", ("a",(std::string)account));
     if( contract_abi_imported.count(account.value) > 0 ) {
       init_contract_abi_ctxt();
@@ -1011,7 +995,7 @@ public:
 
     try {
       // this checks the validity of ABI
-      if( !abieos_set_abi_bin(contract_abi_ctxt, account.value, data.data(), data.size()) ) {
+      if( !abieos_set_abi_bin(contract_abi_ctxt, account.value, data.get_pos(), data.remaining()) ) {
         throw runtime_error( abieos_get_error(contract_abi_ctxt) );
       }
       contract_abi_imported.insert(account.value);
@@ -1037,11 +1021,7 @@ public:
         abiupd->block_num = head;
         abiupd->block_timestamp = block_timestamp;
         abiupd->account = account;
-        abiupd->abi_bytes = bytes {data};
-        eosio::input_stream buf{data.data(), data.data() + data.size()};
-        string error;
-        if (!bin_to_native(abiupd->abi, error, buf))
-          throw runtime_error(error);
+        from_bin(abiupd->abi, data);
         _abi_updates_chan.publish(channel_priority, abiupd);
       }
     }
@@ -1059,7 +1039,7 @@ public:
   }
 
 
-  void save_contract_abi_history(name account, vector<char> data) {
+  void save_contract_abi_history(name account, eosio::input_stream& data) {
     const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block>();
     auto itr = idx.find(boost::make_tuple(account.value, head));
     if( itr != idx.end() ) {
@@ -1129,29 +1109,26 @@ public:
   }
 
 
-  void receive_traces(eosio::input_stream bin, const shared_ptr<flat_buffer>& p) {
+  void receive_traces(eosio::input_stream& bin, const shared_ptr<flat_buffer>& p) {
     if (_transaction_traces_chan.has_subscribers()) {
       uint32_t num;
-      string       error;
-      if( !read_varuint32(bin, error, num) )
-        throw runtime_error(error);
+      varuint32_from_bin(num, bin);
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
         tr->buffer = p;
-        if (!bin_to_native(tr->trace, error, bin))
-          throw runtime_error("transaction_trace conversion error: " + error);
+        from_bin(tr->trace, bin);
         
         // check blacklist and filter
         bool matched_blacklist = false;
         bool matched_rcvr_filter = false;
         bool matched_auth_filter = false;
-        auto& trace = std::get<state_history::transaction_trace_v0>(tr->trace);
+        auto& trace = std::get<eosio::ship_protocol::transaction_trace_v0>(tr->trace);
 
         for( auto atrace = trace.action_traces.begin();
              atrace != trace.action_traces.end();
              ++atrace ) {
           
-          auto &at = std::get<state_history::action_trace_v0>(*atrace);
+          auto &at = std::get<eosio::ship_protocol::action_trace_v0>(*atrace);
 
           // lookup in blacklist
           auto search_acc = blacklist_actions.find(at.act.account.value);
@@ -1208,11 +1185,8 @@ public:
 
   template <typename F>
   void send_request(const jvalue& value, F f) {
-    string error;
     auto bin = make_shared<vector<char>>();
-    if (!json_to_bin(*bin, error, &get_type("request"), value))
-      throw runtime_error("failed to convert during send_request: " + error);
-
+    json_to_bin(*bin, &get_type("request"), value, [&]() {});
     stream->async_write(asio::buffer(*bin),
                         [bin, this, f](const error_code ec, size_t) {
                           callback(ec, "async_write", f); });
@@ -1220,30 +1194,28 @@ public:
 
 
   void check_variant(eosio::input_stream& bin, const abi_type& type, uint32_t expected) {
-    string error;
     uint32_t index;
-    if( !read_varuint32(bin, error, index) )
-      throw runtime_error(error);
-    if (!type.filled_variant)
+    varuint32_from_bin(index, bin);
+    auto var = type.as_variant();
+    if (!var)
       throw runtime_error(type.name + " is not a variant"s);
-    if (index >= type.fields.size())
-      throw runtime_error("expected "s + type.fields[expected].name + " got " + to_string(index));
+    if (index >= var->size())
+      throw runtime_error("expected "s + to_string(expected) + " got " + to_string(index));
     if (index != expected)
-      throw runtime_error("expected "s + type.fields[expected].name + " got " + type.fields[index].name);
+      throw runtime_error("expected "s + var->at(expected).name + " got " + var->at(index).name);
   }
 
 
   void check_variant(eosio::input_stream& bin, const abi_type& type, const char* expected) {
-    string error;
     uint32_t index;
-    if( !read_varuint32(bin, error, index) )
-      throw runtime_error(error);
-    if (!type.filled_variant)
+    varuint32_from_bin(index, bin);
+    auto var = type.as_variant();
+    if (!var)
       throw runtime_error(type.name + " is not a variant"s);
-    if (index >= type.fields.size())
+    if (index >= var->size())
       throw runtime_error("expected "s + expected + " got " + to_string(index));
-    if (type.fields[index].name != expected)
-      throw runtime_error("expected "s + expected + " got " + type.fields[index].name);
+    if (var->at(index).name != expected)
+      throw runtime_error("expected "s + expected + " got " + var->at(index).name);
   }
 
 
@@ -1445,11 +1417,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       auto filter_accs = options.at(RCV_INCLUDE_RECEIVER_OPT).as<vector<string>>();
         
       for(string accstr : filter_accs) {
-        uint64_t accname;
-        if( !string_to_name_strict(accstr, accname) ) {
-          throw std::runtime_error(string("Invalid account name: ") + accstr);
-        }
-        
+        uint64_t accname = eosio::string_to_name_strict(accstr);
         my->rcvr_filter.insert(accname);
         ilog("  filtering on account: ${a}", ("a",accstr));
       }
@@ -1466,11 +1434,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       auto filter_accs = options.at(RCV_INCLUDE_AUTH_OPT).as<vector<string>>();
         
       for(string accstr : filter_accs) {
-        uint64_t accname;
-        if( !string_to_name_strict(accstr, accname) ) {
-          throw std::runtime_error(string("Invalid account name: ") + accstr);
-        }
-        
+        uint64_t accname = eosio::string_to_name_strict(accstr);
         my->auth_filter.insert(accname);
         ilog("  filtering on authorizer: ${a}", ("a",accstr));
       }
@@ -1495,10 +1459,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 
       std::vector<uint64_t> parts_n;
       for( auto s : parts ) {
-        uint64_t v;
-        if( !string_to_name_strict(s, v) ) {
-          throw std::runtime_error(string("Invalid name: ") + s);
-        }
+        uint64_t v = eosio::string_to_name_strict(s);
         parts_n.emplace_back(v);
       }
 
@@ -1513,7 +1474,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
            itr_action != itr_contract->second.end();
            ++itr_action ) {
         ilog("Action blacklist entry: ${c}:${a}",
-             ("c", name_to_string(itr_contract->first))("a", name_to_string(*itr_action)));
+             ("c", itr_contract->first)("a", *itr_action));
       }
     }
     
