@@ -88,7 +88,7 @@ namespace json_encoder {
     state.writer.String(result.data(), result.size());
   }
 
-  inline void native_to_json(const abieos::name& obj, native_to_json_state& state) {
+  inline void native_to_json(const eosio::name& obj, native_to_json_state& state) {
     std::string result = eosio::name_to_string(obj.value);
     state.writer.String(result.data(), result.size());
   }
@@ -112,7 +112,7 @@ namespace json_encoder {
     arithmetic_to_json(obj.value, state);
   }
 
-  inline void native_to_json(eosio::ship_protocol::action& obj, native_to_json_state& state) {
+  inline void native_to_json(const eosio::ship_protocol::action& obj, native_to_json_state& state) {
     state.writer.StartObject();
     eosio::for_each_field<eosio::ship_protocol::action>([&](const char* name, auto&& member) {
         state.writer.Key(name);
@@ -155,7 +155,7 @@ namespace json_encoder {
 
 
 
-  inline void native_to_json(eosio::ship_protocol::contract_row_v0& obj, native_to_json_state& state) {
+  inline void native_to_json(const eosio::ship_protocol::contract_row_v0& obj, native_to_json_state& state) {
     state.writer.StartObject();
     eosio::for_each_field<eosio::ship_protocol::contract_row_v0>([&](const char* name, auto&& member) {
         state.writer.Key(name);
