@@ -1,7 +1,7 @@
 #include <appbase/application.hpp>
 #include <eosio/ship_protocol.hpp>
 #include <abieos.hpp>
-#include <abieos.h>
+#include <eosio/abieos.h>
 #include <boost/beast/core/flat_buffer.hpp>
 
 using namespace appbase;
@@ -45,7 +45,7 @@ namespace chronicle {
       uint32_t                             block_num;
       abieos::checksum256                  block_id;
       uint32_t                             last_irreversible;
-      eosio::ship_protocol::signed_block   block;
+      eosio::ship_protocol::signed_block_variant   block;
       std::shared_ptr<flat_buffer>         buffer;
     };
 
@@ -55,7 +55,7 @@ namespace chronicle {
 
     struct block_table_delta {
       uint32_t                                   block_num;
-      abieos::block_timestamp                    block_timestamp;
+      eosio::block_timestamp                     block_timestamp;
       eosio::ship_protocol::table_delta_v0       table_delta;
       std::shared_ptr<flat_buffer>               buffer;
     };
@@ -67,7 +67,7 @@ namespace chronicle {
 
     struct transaction_trace {
       uint32_t                                 block_num;
-      abieos::block_timestamp                  block_timestamp;
+      eosio::block_timestamp                   block_timestamp;
       eosio::ship_protocol::transaction_trace  trace;
       std::shared_ptr<flat_buffer>             buffer;
     };
@@ -78,7 +78,7 @@ namespace chronicle {
 
     struct abi_update {
       uint32_t                        block_num;
-      abieos::block_timestamp         block_timestamp;
+      eosio::block_timestamp          block_timestamp;
       abieos::name                    account;
       abieos::abi_def                 abi;
     };
@@ -89,7 +89,7 @@ namespace chronicle {
 
     struct abi_removal {
       uint32_t                        block_num;
-      abieos::block_timestamp         block_timestamp;
+      eosio::block_timestamp          block_timestamp;
       abieos::name                    account;
     };
 
@@ -99,7 +99,7 @@ namespace chronicle {
 
     struct abi_error {
       uint32_t                        block_num;
-      abieos::block_timestamp         block_timestamp;
+      eosio::block_timestamp          block_timestamp;
       abieos::name                    account;
       string                          error;
     };
@@ -110,7 +110,7 @@ namespace chronicle {
 
     struct table_row_update {
       uint32_t                                 block_num;
-      abieos::block_timestamp                  block_timestamp;
+      eosio::block_timestamp                   block_timestamp;
       bool                                     added; // false==removed
       eosio::ship_protocol::contract_row_v0    kvo;
       std::shared_ptr<flat_buffer>             buffer;
@@ -122,7 +122,7 @@ namespace chronicle {
 
     struct permission_update {
       uint32_t                                 block_num;
-      abieos::block_timestamp                  block_timestamp;
+      eosio::block_timestamp                   block_timestamp;
       bool                                     added; // false==removed
       eosio::ship_protocol::permission_v0      permission;
       std::shared_ptr<flat_buffer>             buffer;
@@ -135,7 +135,7 @@ namespace chronicle {
 
     struct permission_link_update {
       uint32_t                                 block_num;
-      abieos::block_timestamp                  block_timestamp;
+      eosio::block_timestamp                   block_timestamp;
       bool                                     added; // false==removed
       eosio::ship_protocol::permission_link_v0 permission_link;
       std::shared_ptr<flat_buffer>             buffer;
@@ -149,7 +149,7 @@ namespace chronicle {
 
     struct account_metadata_update {
       uint32_t                                   block_num;
-      abieos::block_timestamp                    block_timestamp;
+      eosio::block_timestamp                     block_timestamp;
       eosio::ship_protocol::account_metadata_v0  account_metadata;
       std::shared_ptr<flat_buffer>               buffer;
     };
@@ -171,7 +171,7 @@ namespace chronicle {
     struct block_finished {
       uint32_t                        block_num;
       abieos::checksum256             block_id;
-      abieos::block_timestamp         block_timestamp;
+      eosio::block_timestamp          block_timestamp;
       uint32_t                        last_irreversible;
     };
 

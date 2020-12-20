@@ -279,7 +279,7 @@ public:
   uint32_t                              irreversible    = 0;
   checksum256                           irreversible_id = {};
   uint32_t                              first_bulk      = 0;
-  abieos::block_timestamp               block_timestamp;
+  eosio::block_timestamp                block_timestamp;
   uint32_t                              received_blocks = 0;
 
   // needed for decoding state history input
@@ -842,7 +842,7 @@ public:
     block_ptr->buffer = p;
 
     from_bin(block_ptr->block, bin);
-    block_timestamp = block_ptr->block.timestamp;
+    block_timestamp = std::visit([](auto&& arg){return arg.timestamp;}, block_ptr->block);
     if (!skip_block_events) {
       _blocks_chan.publish(channel_priority, block_ptr);
     }
