@@ -842,7 +842,7 @@ public:
     block_ptr->buffer = p;
 
     from_bin(block_ptr->block, bin);
-    block_timestamp = std::visit([](auto&& arg){return arg.timestamp;}, block_ptr->block);
+    block_timestamp = block_ptr->block.timestamp;
     if (!skip_block_events) {
       _blocks_chan.publish(channel_priority, block_ptr);
     }
