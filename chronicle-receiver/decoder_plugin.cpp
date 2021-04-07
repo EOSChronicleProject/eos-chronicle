@@ -291,15 +291,9 @@ namespace json_encoder {
   }
   
 
-  inline void native_to_json(const eosio::ship_protocol::transaction_variant& obj, native_to_json_state& state) {
-    if( obj.index() == 0 ) {
-      const checksum256& v = std::get<checksum256>(obj);
-      native_to_json(v, state);
-    }
-    else {
-      const eosio::ship_protocol::packed_transaction& v = std::get<eosio::ship_protocol::packed_transaction>(obj);
-      native_to_json(v, state);
-    }
+  template <typename... Types>
+  inline void native_to_json(const std::variant<Types...>& obj, native_to_json_state& state) {
+    std::visit([&](auto&& arg){native_to_json(arg, state);}, obj);
   }
 
 
