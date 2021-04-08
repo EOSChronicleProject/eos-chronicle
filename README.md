@@ -199,12 +199,12 @@ fixed in the future.
 3GB RAM is required for successful compilation. Smaller RAM will cause
 heavy swapping during the compilation.
 
-Ubuntu 19.10 instructions:
+Ubuntu 19.10 instructions (deprecated; Ubuntu 19.10 is no longer supported):
 
 
 ```
-sudo apt update && \
-sudo apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test-dev \
+apt update && \
+apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test-dev \
  libboost-filesystem-dev libboost-date-time-dev libboost-system-dev libboost-iostreams-dev \
  libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev zlib1g-dev
 
@@ -218,28 +218,33 @@ cd build
 cmake ..
 # use "make -j N" for N CPU cores for faster compiling (may require more RAM)
 make
-sudo make install
+make install
 ```
 
-Ubuntu 18.04 instructions:
+Ubuntu 18.04 instructions. For 20.04, replace "bionic" with "focal" in
+`apt-add-repository`
 
 
 ```
-wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | sudo apt-key add -
-sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
+apt install -y gnupg software-properties-common
+wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
 
-sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+# 18.04
+apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
+# 20.04
+# apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
 
-sudo apt update && \
-sudo apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
-sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
+add-apt-repository -y ppa:ubuntu-toolchain-r/test
+
+apt update && apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
 wget https://dl.bintray.com/boostorg/release/1.67.0/source/boost_1_67_0.tar.gz
 tar -xvzf boost_1_67_0.tar.gz
 cd boost_1_67_0
 ./bootstrap.sh
-# use " sudo ./b2 install -j N" for N CPU cores for faster compiling (may require more RAM)
-sudo ./b2 install 
+# use " ./b2 install -j N" for N CPU cores for faster compiling (may require more RAM)
+./b2 install 
 cd ..
 
 mkdir build
@@ -252,7 +257,7 @@ cd build
 cmake ..
 # use "make -j N" for N CPU cores for faster compiling (may require more RAM)
 make
-sudo make install
+make install
 ```
 
 
@@ -267,7 +272,7 @@ In order for Chronicle to function properly, both `trace-history` and
 output needs to be present in Chronicle output,
 `trace-history-debug-mode` needs to be enabled too.
 
-Example `config.ini` for nodeos version 1.8:
+Example `config.ini` for nodeos version 1.8 or 2.0:
 
 ```
 contracts-console = true
