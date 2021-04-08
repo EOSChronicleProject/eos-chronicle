@@ -18,8 +18,8 @@ jobs:
     #       sudo apt-key add -
 
     #add repository
-    - name: add repository
-      run: sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
+    # - name: add repository
+    #   run: sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 
     # install dependencies
     - name: dependencies
