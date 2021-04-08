@@ -14,8 +14,7 @@ jobs:
     - name: gnupg
       run: | 
           sudo apt install -y gnupg software-properties-common
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null
-          sudo apt-key add -
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | sudo apt-key add -
 
     #add repository
     - name: add repository
