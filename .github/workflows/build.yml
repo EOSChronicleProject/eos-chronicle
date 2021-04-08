@@ -19,11 +19,11 @@ jobs:
 
     #add repository
     - name: add repository
-      run: apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
+      run: sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 
     # install dependencies
     - name: dependencies
-      run: apt update && apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
+      run: sudo apt update && apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
     # install boost
