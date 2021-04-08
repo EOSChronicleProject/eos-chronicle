@@ -22,14 +22,14 @@ jobs:
     #   run: sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 
     # install dependencies
-    - name: dependencies
+    - name: Install dependencies
       run: |
            sudo apt update
            sudo apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
     # install boost
-    - name: boost
+    - name: Install boost
       run: |
            wget https://dl.bintray.com/boostorg/release/1.67.0/source/boost_1_67_0.tar.gz
            tar -xvzf boost_1_67_0.tar.gz
@@ -39,11 +39,11 @@ jobs:
            cd ..
 
     #update submodules
-    - name: git submodule update
-      run: git submodule --init --recursive
+    - name: Update git submodule
+      run: git submodule update --init --recursive
 
     # build project
-    - name: mkdir
+    - name: Build project
       run: |
           mkdir -p build
           cd build
