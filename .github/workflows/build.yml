@@ -26,11 +26,10 @@ jobs:
     - uses: actions/checkout@v2
 
     #Install gnupg & software-properties-common
-    - name: Install gnupg & software-properties-common
-      run: |
-          #sudo apt install -y gnupg software-properties-common ca-certificates
-          wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc
-          sudo apt-key add -
+    - name: Import GPG key
+      env: 
+        GPG_KEY: ${{secrets.GPG_KEY}}
+      run: sudo apt-key add - "$env:GPG_KEY"
 
     #Add repository
     - name: Add repository
