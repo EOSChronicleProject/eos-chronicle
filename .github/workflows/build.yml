@@ -25,11 +25,16 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    #Install gnupg & software-properties-common
+    #Import GPG key
     - name: Import GPG key
-      env: 
-        GPG_KEY: ${{secrets.GPG_KEY}}
-      run: sudo apt-key add "$env:GPG_KEY"
+      # env: 
+      #   GPG_KEY: ${{secrets.GPG_KEY}}
+      # run: sudo apt-key add "$env:GPG_KEY"
+      run: |
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null
+          gpg --dearmor -
+          sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+
 
     #Add repository
     - name: Add repository
