@@ -25,28 +25,27 @@ jobs:
             repo: "deb https://apt.kitware.com/ubuntu/ focal main"
           }
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository and submodules
+      uses: actions/checkout@v2
+      with: 
+        submodules: recursive
 
-    #Import GPG key
     - name: Import GPG key
       run: |
           wget -O gpg_key.txt https://apt.kitware.com/keys/kitware-archive-latest.asc
           sudo apt-key add gpg_key.txt
 
-    #Add repository
     - name: Add repository
       run: |
           sudo apt-add-repository '${{matrix.config.repo}}'
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 
-    # install dependencies
     - name: Install dependencies
       run: |
            sudo apt update
            sudo apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
-    # install boost
     - name: Install boost
       run: |
            wget https://dl.bintray.com/boostorg/release/1.67.0/source/boost_1_67_0.tar.gz
@@ -56,11 +55,6 @@ jobs:
            sudo ./b2 install -j 2
            cd ..
 
-    #update submodules
-    - name: Update git submodule
-      run: git submodule update --init --recursive
-
-    # build project
     - name: Build project
       run: |
           mkdir -p build
