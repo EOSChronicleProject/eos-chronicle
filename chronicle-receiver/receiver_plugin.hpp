@@ -31,13 +31,13 @@ namespace chronicle {
     }
 
     struct fork_event {
-      uint32_t         fork_block_num;
+      uint32_t         block_num;
       uint32_t         depth;
       fork_reason_val  fork_reason;
       uint32_t         last_irreversible;
     };
 
-    EOSIO_REFLECT(fork_event, fork_block_num, depth, fork_reason, last_irreversible);
+    EOSIO_REFLECT(fork_event, block_num, depth, fork_reason, last_irreversible);
 
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
 

@@ -405,7 +405,7 @@ public:
       }
       ilog("Issuing an explicit fork event");
       auto fe = std::make_shared<chronicle::channels::fork_event>();
-      fe->fork_block_num = head+1;
+      fe->block_num = head+1;
       fe->depth = 0;
       fe->fork_reason = chronicle::channels::fork_reason_val::resync;
       fe->last_irreversible = 0;
@@ -415,7 +415,7 @@ public:
     if( did_undo ) {
       ilog("Reverted to block=${b}, issuing an explicit fork event", ("b",head));
       auto fe = std::make_shared<chronicle::channels::fork_event>();
-      fe->fork_block_num = head + 1;
+      fe->block_num = head + 1;
       fe->depth = depth;
       fe->fork_reason = chronicle::channels::fork_reason_val::restart;
       fe->last_irreversible = irreversible;
@@ -728,7 +728,7 @@ public:
             exporter_acked_block = block_num - 1;
 
           auto fe = std::make_shared<chronicle::channels::fork_event>();
-          fe->fork_block_num = block_num;
+          fe->block_num = block_num;
           fe->depth = depth;
           fe->fork_reason = chronicle::channels::fork_reason_val::network;
           fe->last_irreversible = last_irreversible_num;
