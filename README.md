@@ -1,4 +1,4 @@
-[![Actions Status: build]](https://github.com/Avm07/eos-chronicle/actions/workflows/build.yml/badge.svg)
+[![Actions Status: build](https://github.com/Avm07/eos-chronicle/workflows/build/badge.svg)](https://github.com/Avm07/eos-chronicle/actions/workflows/build.yml/badge.svg)
 
 # EOS Chronicle Project
 
