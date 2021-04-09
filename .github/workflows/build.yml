@@ -31,9 +31,10 @@ jobs:
       #   GPG_KEY: ${{secrets.GPG_KEY}}
       # run: sudo apt-key add "$env:GPG_KEY"
       run: |
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc
-          gpg --dearmor -
-          sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+          wget -O gpg_key.txt https://apt.kitware.com/keys/kitware-archive-latest.asc
+          # gpg --dearmor -
+          # sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+          sudo apt-key add gpg_key.txt
 
 
     #Add repository
