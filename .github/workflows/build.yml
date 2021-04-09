@@ -15,13 +15,15 @@ jobs:
         - {
             name: "Ubuntu-18.04", artifact: "uduntu-18.04.tar.xz",
             os: ubuntu-18.04,
-            build_type: "Release", cc: "gcc", cxx: "g++"
+            build_type: "Release", cc: "gcc", cxx: "g++",
+            repo: "deb https://apt.kitware.com/ubuntu/ bionic main"
           }
-        # - {
-        #     name: "Ubuntu-20.04", artifact: "uduntu-20.04.tar.xz",
-        #     os: ubuntu-20.04,
-        #     build_type: "Release", cc: "gcc", cxx: "g++"
-        #   }
+        - {
+            name: "Ubuntu-20.04", artifact: "uduntu-20.04.tar.xz",
+            os: ubuntu-20.04,
+            build_type: "Release", cc: "gcc", cxx: "g++",
+            repo: "deb https://apt.kitware.com/ubuntu/ focal main"
+          }
     steps:
     - uses: actions/checkout@v2
 
@@ -32,14 +34,11 @@ jobs:
       # run: sudo apt-key add "$env:GPG_KEY"
       run: |
           wget -O gpg_key.txt https://apt.kitware.com/keys/kitware-archive-latest.asc
-          # gpg --dearmor -
-          # sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
           sudo apt-key add gpg_key.txt
-
 
     #Add repository
     - name: Add repository
-      run: sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
+      run: sudo apt-add-repository '${{matrix.config.repo}}'
 
     # install dependencies
     - name: Install dependencies
