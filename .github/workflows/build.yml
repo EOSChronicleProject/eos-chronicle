@@ -1,24 +1,39 @@
 name: build
 on:
   push:
-    branches: [ master ]
+    branches: [ master, develop ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, develop ]
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: ${{matrix.config.name}}
+    runs-on: ${{matrix.config.os}}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+        - {
+            name: "Ubuntu-18.04", artifact: "uduntu-18.04.tar.xz",
+            os: ubuntu-18.04,
+            build_type: "Release", cc: "gcc", cxx: "g++"
+          }
+        # - {
+        #     name: "Ubuntu-20.04", artifact: "uduntu-20.04.tar.xz",
+        #     os: ubuntu-20.04,
+        #     build_type: "Release", cc: "gcc", cxx: "g++"
+        #   }
     steps:
     - uses: actions/checkout@v2
 
     #install gnupg
-    # - name: gnupg
+    # - name: Install gnupg
     #   run: |
     #       sudo apt install -y gnupg software-properties-common
     #       wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null
     #       sudo apt-key add -
 
     #add repository
-    # - name: add repository
+    # - name: Add repository
     #   run: sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 
     # install dependencies
