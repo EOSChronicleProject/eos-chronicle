@@ -45,6 +45,7 @@ jobs:
            sudo apt update
            sudo apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
+           sudo ldconfig -v
 
     # install boost
     - name: Install boost
