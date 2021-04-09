@@ -1,3 +1,5 @@
+[![Actions Status: build](https://github.com/EOSChronicleProject/eos-chronicle/workflows/build/badge.svg)](https://github.com/EOSChronicleProject/eos-chronicle/actions/workflows/build.yml/badge.svg)
+
 # EOS Chronicle Project
 
 This project is an implementation of work proposal as published at
