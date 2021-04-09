@@ -28,7 +28,7 @@ jobs:
     #Install gnupg & software-properties-common
     - name: Install gnupg & software-properties-common
       run: |
-          #sudo apt install -y gnupg software-properties-common
+          sudo apt install -y gnupg software-properties-common ca-certificates
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc
           sudo apt-key add -
 
