@@ -1,0 +1,65 @@
+name: build
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+jobs:
+  build:
+    name: ${{matrix.config.name}}
+    runs-on: ${{matrix.config.os}}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+        - {
+            name: "Ubuntu-18.04", artifact: "uduntu-18.04.tar.xz",
+            os: ubuntu-18.04,
+            build_type: "Release", cc: "gcc", cxx: "g++",
+            repo: "deb https://apt.kitware.com/ubuntu/ bionic main"
+          }
+        - {
+            name: "Ubuntu-20.04", artifact: "uduntu-20.04.tar.xz",
+            os: ubuntu-20.04,
+            build_type: "Release", cc: "gcc", cxx: "g++",
+            repo: "deb https://apt.kitware.com/ubuntu/ focal main"
+          }
+    steps:
+    - name: Checkout repository and submodules
+      uses: actions/checkout@v2
+      with: 
+        fetch-depth: 0
+        submodules: recursive
+
+    - name: Import GPG key
+      run: |
+          wget -O gpg_key.txt https://apt.kitware.com/keys/kitware-archive-latest.asc
+          sudo apt-key add gpg_key.txt
+
+    - name: Add repository
+      run: |
+          sudo apt-add-repository '${{matrix.config.repo}}'
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+
+    - name: Install dependencies
+      run: |
+           sudo apt update
+           sudo apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
+           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
+
+    - name: Install boost
+      run: |
+           wget https://dl.bintray.com/boostorg/release/1.67.0/source/boost_1_67_0.tar.gz
+           tar -xvzf boost_1_67_0.tar.gz
+           cd boost_1_67_0
+           ./bootstrap.sh
+           sudo ./b2 install -j 2
+           cd ..
+
+    - name: Build project
+      run: |
+          mkdir -p build
+          cd build
+          cmake ..
+          make
+    
