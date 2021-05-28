@@ -1375,7 +1375,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
 
     my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
     my->stream->binary(true);
-    my->stream->read_message_max(10ull * 1ull<<30);
+    my->stream->read_message_max(0x1ull<<36);
 
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();
