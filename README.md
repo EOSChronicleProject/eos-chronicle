@@ -434,6 +434,9 @@ The following options are available from command line and `config.ini`:
 * `skip-traces = true|false` (=`false`) Disable transaction trace events
   in the export.
 
+* `skip-account-info = true|false` (=`false`) Disable account
+  permissions and metainformation in the export.
+
 * `irreversible-only = true|false` (=`false`) fetch irreversible blocks
 only
 
@@ -468,7 +471,7 @@ only
   output filtering on traces matching `include-auth` filters.
 
 * `include-auth = NAME` If `enable-auth-filter` is enabled, one or
-  multiple `include-auth` options specufy the account names that are
+  multiple `include-auth` options specify the account names that are
   looked up in action authorizations. Only the traces matching at
   least one authorization will be included in the output.
 
@@ -477,6 +480,14 @@ only
   corresponding traces. Multiple (contract:action) tuples can be
   specified. By default, only `eosio:onblock` is blacklisted.
 
+* `enable-tables-filter = true|false` (=`false`) if enabled, activates
+  output filtering on table deltas for contracts matching
+  `include-tables-contract` filters.
+
+* `include-tables-contract = NAME` If `enable-tables-filter` is
+  enabled, one or multiple `include-tables-contract` options specufy
+  the contract names for which table deltas would be included in the
+  output.
 
 If both `enable-receiver-filter` and `enable-auth-filter` are enabled,
 the output will include traces matching any of the filters. The

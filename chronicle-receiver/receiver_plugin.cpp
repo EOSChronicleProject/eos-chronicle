@@ -80,6 +80,7 @@ namespace {
   const char* RCV_SKIP_BLOCK_EVT_OPT = "skip-block-events";
   const char* RCV_SKIP_DELTAS_OPT = "skip-table-deltas";
   const char* RCV_SKIP_TRACES_OPT = "skip-traces";
+  const char* RCV_SKIP_ACCOUNT_INFO_OPT = "skip-account-info";
   const char* RCV_IRREV_ONLY_OPT = "irreversible-only";
   const char* RCV_START_BLOCK_OPT = "start-block";
   const char* RCV_END_BLOCK_OPT = "end-block";
@@ -89,6 +90,8 @@ namespace {
   const char* RCV_ENABLE_AUTH_FILTER_OPT = "enable-auth-filter";
   const char* RCV_INCLUDE_AUTH_OPT = "include-auth";
   const char* RCV_BLACKLIST_ACTION_OPT = "blacklist-action";
+  const char* RCV_ENABLE_TABLES_FILTER_OPT = "enable-tables-filter";
+  const char* RCV_INCLUDE_TABLES_CONTRACT_OPT = "include-tables-contract";
 
   const char* RCV_MODE_SCAN = "scan";
   const char* RCV_MODE_SCAN_NOEXP = "scan-noexport";
@@ -269,6 +272,7 @@ public:
   bool                                  skip_block_events;
   bool                                  skip_table_deltas;
   bool                                  skip_traces;
+  bool                                  skip_account_info;
   bool                                  irreversible_only;
   uint32_t                              start_block_num;
   uint32_t                              end_block_num;
@@ -297,7 +301,10 @@ public:
   bool                                  enable_auth_filter;
   set<uint64_t>                         auth_filter;
 
-  bool                                  do_filter; // true if any of filters is enabled
+  bool                                  enable_tables_filter;
+  set<uint64_t>                         tables_filter;
+
+  bool                                  do_trace_filter; // true if any of trace filters is enabled
   
   chronicle::channels::forks::channel_type&               _forks_chan;
   chronicle::channels::blocks::channel_type&              _blocks_chan;
@@ -897,55 +904,58 @@ public:
             (_table_row_updates_chan.has_subscribers() || _abi_errors_chan.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
-            tru->block_num = head;
-            tru->block_timestamp = block_timestamp;
-            tru->buffer = p;
-
             from_bin(tru->kvo, row.data);
-            if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
-              tru->added = row.present;
-              _table_row_updates_chan.publish(channel_priority, tru);
+            if (!enable_tables_filter || tables_filter.count(tru->kvo.code.value) > 0) {
+              if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
+                tru->block_num = head;
+                tru->block_timestamp = block_timestamp;
+                tru->buffer = p;
+                tru->added = row.present;
+                _table_row_updates_chan.publish(channel_priority, tru);
+              }
+              else {
+                auto ae =  std::make_shared<chronicle::channels::abi_error>();
+                ae->block_num = head;
+                ae->block_timestamp = block_timestamp;
+                ae->account = tru->kvo.code;
+                ae->error = "cannot decode table delta because of missing ABI";
+                _abi_errors_chan.publish(channel_priority, ae);
+              }
             }
-            else {
-              auto ae =  std::make_shared<chronicle::channels::abi_error>();
-              ae->block_num = head;
-              ae->block_timestamp = block_timestamp;
-              ae->account = tru->kvo.code;
-              ae->error = "cannot decode table delta because of missing ABI";
-              _abi_errors_chan.publish(channel_priority, ae);
+          }
+        }
+        else if (!skip_account_info) {
+          if (bltd->table_delta.name == "permission" && _permission_updates_chan.has_subscribers() ) {
+            for (auto& row : bltd->table_delta.rows) {
+              auto pu = std::make_shared<chronicle::channels::permission_update>();
+              pu->block_num = head;
+              pu->block_timestamp = block_timestamp;
+              pu->buffer = p;
+              from_bin(pu->permission, row.data);
+              pu->added = row.present;
+              _permission_updates_chan.publish(channel_priority, pu);
             }
           }
-        }
-        else if (bltd->table_delta.name == "permission" && _permission_updates_chan.has_subscribers() ) {
-          for (auto& row : bltd->table_delta.rows) {
-            auto pu = std::make_shared<chronicle::channels::permission_update>();
-            pu->block_num = head;
-            pu->block_timestamp = block_timestamp;
-            pu->buffer = p;
-            from_bin(pu->permission, row.data);
-            pu->added = row.present;
-            _permission_updates_chan.publish(channel_priority, pu);
+          else if (bltd->table_delta.name == "permission_link" && _permission_link_updates_chan.has_subscribers() ) {
+            for (auto& row : bltd->table_delta.rows) {
+              auto plu = std::make_shared<chronicle::channels::permission_link_update>();
+              plu->block_num = head;
+              plu->block_timestamp = block_timestamp;
+              plu->buffer = p;
+              from_bin(plu->permission_link, row.data);
+              plu->added = row.present;
+              _permission_link_updates_chan.publish(channel_priority, plu);
+            }
           }
-        }
-        else if (bltd->table_delta.name == "permission_link" && _permission_link_updates_chan.has_subscribers() ) {
-          for (auto& row : bltd->table_delta.rows) {
-            auto plu = std::make_shared<chronicle::channels::permission_link_update>();
-            plu->block_num = head;
-            plu->block_timestamp = block_timestamp;
-            plu->buffer = p;
-            from_bin(plu->permission_link, row.data);
-            plu->added = row.present;
-            _permission_link_updates_chan.publish(channel_priority, plu);
-          }
-        }
-        else if (bltd->table_delta.name == "account_metadata" && _account_metadata_updates_chan.has_subscribers() ) {
-          for (auto& row : bltd->table_delta.rows) {
-            auto amu = std::make_shared<chronicle::channels::account_metadata_update>();
-            amu->block_num = head;
-            amu->block_timestamp = block_timestamp;
-            amu->buffer = p;
-            from_bin(amu->account_metadata, row.data);
-            _account_metadata_updates_chan.publish(channel_priority, amu);
+          else if (bltd->table_delta.name == "account_metadata" && _account_metadata_updates_chan.has_subscribers() ) {
+            for (auto& row : bltd->table_delta.rows) {
+              auto amu = std::make_shared<chronicle::channels::account_metadata_update>();
+              amu->block_num = head;
+              amu->block_timestamp = block_timestamp;
+              amu->buffer = p;
+              from_bin(amu->account_metadata, row.data);
+              _account_metadata_updates_chan.publish(channel_priority, amu);
+            }
           }
         }
       }
@@ -1162,7 +1172,7 @@ public:
         }
         
         if( !matched_blacklist ) {
-          if( !do_filter ||
+          if( !do_trace_filter ||
               (enable_rcvr_filter && matched_rcvr_filter) ||
               (enable_auth_filter && matched_auth_filter) ) {
             tr->block_num = head;
@@ -1284,6 +1294,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_SKIP_BLOCK_EVT_OPT, bpo::value<bool>()->default_value(false), "Do not produce BLOCK events")
     (RCV_SKIP_DELTAS_OPT, bpo::value<bool>()->default_value(false), "Do not produce table delta events")
     (RCV_SKIP_TRACES_OPT, bpo::value<bool>()->default_value(false), "Do not produce transaction trace events")
+    (RCV_SKIP_ACCOUNT_INFO_OPT, bpo::value<bool>()->default_value(false), "Do not produce permissions and account metadata events")
     (RCV_IRREV_ONLY_OPT, bpo::value<bool>()->default_value(false), "Fetch only irreversible blocks")
     (RCV_START_BLOCK_OPT, bpo::value<uint32_t>()->default_value(0),
      "Start from a snapshot block instead of genesis")
@@ -1295,6 +1306,8 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_ENABLE_AUTH_FILTER_OPT, bpo::value<bool>()->default_value(false), "Filter traces by authorizer")
     (RCV_INCLUDE_AUTH_OPT, bpo::value<vector<string>>(), "Account(s) to match in authorizers")
     (RCV_BLACKLIST_ACTION_OPT, bpo::value<vector<string>>(), "contract:action to exclude from traces")
+    (RCV_ENABLE_TABLES_FILTER_OPT, bpo::value<bool>()->default_value(false), "Filter table deltas by contract")
+    (RCV_INCLUDE_TABLES_CONTRACT_OPT, bpo::value<vector<string>>(), "Contract account(s) to match in table deltas")
     ;
 }
 
@@ -1394,6 +1407,10 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     if( my->skip_traces )
       ilog("Skipping transaction trace events");
 
+    my->skip_account_info = options.at(RCV_SKIP_ACCOUNT_INFO_OPT).as<bool>();
+    if( my->skip_account_info )
+      ilog("Skipping account permissions and metadata events");
+    
     if( my->irreversible_only )
       ilog("Fetching irreversible blocks only");
 
@@ -1440,7 +1457,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       }
     }
 
-    my->do_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
+    my->do_trace_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
       
     vector<string> blacklist_str({string("eosio:onblock")});
 
@@ -1474,7 +1491,24 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
            itr_action != itr_contract->second.end();
            ++itr_action ) {
         ilog("Action blacklist entry: ${c}:${a}",
-             ("c", itr_contract->first)("a", *itr_action));
+             ("c", eosio::name_to_string(itr_contract->first))("a", eosio::name_to_string(*itr_action)));
+      }
+    }
+
+    my->enable_tables_filter = options.at(RCV_ENABLE_TABLES_FILTER_OPT).as<bool>();
+    if( my->enable_tables_filter ) {
+      ilog("Enabled table deltas filter:");
+
+      if( !options.count(RCV_INCLUDE_TABLES_CONTRACT_OPT) ) {
+        throw std::runtime_error("Need at least one name in include-tables-contract option");
+      }
+
+      auto filter_accs = options.at(RCV_INCLUDE_TABLES_CONTRACT_OPT).as<vector<string>>();
+        
+      for(string accstr : filter_accs) {
+        uint64_t accname = eosio::string_to_name_strict(accstr);
+        my->tables_filter.insert(accname);
+        ilog("  filtering contract: ${a}", ("a",accstr));
       }
     }
     
