@@ -297,7 +297,7 @@ public:
 
   bool                                  enable_rcvr_filter;
   set<uint64_t>                         rcvr_filter;
-  
+
   bool                                  enable_auth_filter;
   set<uint64_t>                         auth_filter;
 
@@ -305,7 +305,7 @@ public:
   set<uint64_t>                         tables_filter;
 
   bool                                  do_trace_filter; // true if any of trace filters is enabled
-  
+
   chronicle::channels::forks::channel_type&               _forks_chan;
   chronicle::channels::blocks::channel_type&              _blocks_chan;
   chronicle::channels::block_table_deltas::channel_type&  _block_table_deltas_chan;
@@ -325,6 +325,7 @@ public:
   bool                                  exporter_will_ack = false;
   uint32_t                              exporter_acked_block = 0;
   uint32_t                              exporter_max_unconfirmed;
+  uint32_t                              forked_at_block = 0;
   boost::asio::deadline_timer           pause_timer;
   uint32_t                              pause_time_msec = 0;
   bool                                  slowdown_requested = false;
@@ -413,6 +414,7 @@ public:
       ilog("Issuing an explicit fork event");
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->block_num = head+1;
+      forked_at_block = fe->block_num;
       fe->depth = 0;
       fe->fork_reason = chronicle::channels::fork_reason_val::resync;
       fe->last_irreversible = 0;
@@ -423,6 +425,7 @@ public:
       ilog("Reverted to block=${b}, issuing an explicit fork event", ("b",head));
       auto fe = std::make_shared<chronicle::channels::fork_event>();
       fe->block_num = head + 1;
+      forked_at_block = fe->block_num;
       fe->depth = depth;
       fe->fork_reason = chronicle::channels::fork_reason_val::restart;
       fe->last_irreversible = irreversible;
@@ -513,7 +516,7 @@ public:
 
   // if consumer fails to acknowledge on time, or processing queues get too big, we pacify the receiver
   bool check_pause() {
-    if (slowdown_requested ||
+    if (slowdown_requested || forked_at_block > 0 ||
         (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ||
         app().get_priority_queue().size() > max_queue_size ||
         (!interactive_mode && head == end_block_num -1)) {
@@ -719,8 +722,8 @@ public:
 
         // we're at the blockchain head
         if (block_num <= head) { //received a block that is lower than what we already saw
-          ilog("fork detected at block ${b}; head=${h}", ("b",block_num)("h",head));
           uint32_t depth = head - block_num;
+          ilog("fork detected at block ${b}; head=${h}, depth=${d}", ("b",block_num)("h",head)("d",depth));
           init_contract_abi_ctxt();
           while( db->revision() >= block_num ) {
             db->undo();
@@ -736,6 +739,7 @@ public:
 
           auto fe = std::make_shared<chronicle::channels::fork_event>();
           fe->block_num = block_num;
+          forked_at_block = fe->block_num;
           fe->depth = depth;
           fe->fork_reason = chronicle::channels::fork_reason_val::network;
           fe->last_irreversible = last_irreversible_num;
@@ -867,7 +871,7 @@ public:
       bltd->block_timestamp = block_timestamp;
       bltd->buffer = p;
 
-      
+
       from_bin(bltd->table_delta, bin);
       auto& variant_type = get_type(bltd->table_delta.name);
 
@@ -879,7 +883,7 @@ public:
         wlog("Variant type ${t} has more than one alternative, not supported yet", ("t", variant_type.name));
         continue;
       }
-      
+
       size_t num_processed = 0;
       for (auto& row : bltd->table_delta.rows) {
         check_variant(row.data, variant_type, 0u);
@@ -1127,7 +1131,7 @@ public:
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
         tr->buffer = p;
         from_bin(tr->trace, bin);
-        
+
         // check blacklist and filter
         bool matched_blacklist = false;
         bool matched_rcvr_filter = false;
@@ -1137,7 +1141,7 @@ public:
         for( auto atrace = trace.action_traces.begin();
              atrace != trace.action_traces.end();
              ++atrace ) {
-          
+
           auto &at = std::get<eosio::ship_protocol::action_trace_v0>(*atrace);
 
           // lookup in blacklist
@@ -1156,7 +1160,7 @@ public:
               break;
             }
           }
-          
+
           // check auth filter
           if( enable_auth_filter ) {
             for( auto auth : at.act.authorization ) {
@@ -1170,7 +1174,7 @@ public:
               break;
           }
         }
-        
+
         if( !matched_blacklist ) {
           if( !do_trace_filter ||
               (enable_rcvr_filter && matched_rcvr_filter) ||
@@ -1410,7 +1414,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     my->skip_account_info = options.at(RCV_SKIP_ACCOUNT_INFO_OPT).as<bool>();
     if( my->skip_account_info )
       ilog("Skipping account permissions and metadata events");
-    
+
     if( my->irreversible_only )
       ilog("Fetching irreversible blocks only");
 
@@ -1432,7 +1436,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       }
 
       auto filter_accs = options.at(RCV_INCLUDE_RECEIVER_OPT).as<vector<string>>();
-        
+
       for(string accstr : filter_accs) {
         uint64_t accname = eosio::string_to_name_strict(accstr);
         my->rcvr_filter.insert(accname);
@@ -1449,7 +1453,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       }
 
       auto filter_accs = options.at(RCV_INCLUDE_AUTH_OPT).as<vector<string>>();
-        
+
       for(string accstr : filter_accs) {
         uint64_t accname = eosio::string_to_name_strict(accstr);
         my->auth_filter.insert(accname);
@@ -1458,7 +1462,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     }
 
     my->do_trace_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
-      
+
     vector<string> blacklist_str({string("eosio:onblock")});
 
     if( options.count(RCV_BLACKLIST_ACTION_OPT) ) {
@@ -1467,7 +1471,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
         blacklist_str.emplace_back(bl_entry);
       }
     }
-    
+
     for( auto blpair : blacklist_str ) {
       std::vector<std::string> parts;
       boost::split( parts, blpair, boost::is_any_of(":"));
@@ -1486,7 +1490,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
     for( auto itr_contract = my->blacklist_actions.begin();
          itr_contract != my->blacklist_actions.end();
          ++itr_contract ) {
-      
+
       for( auto itr_action = itr_contract->second.begin();
            itr_action != itr_contract->second.end();
            ++itr_action ) {
@@ -1504,14 +1508,14 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       }
 
       auto filter_accs = options.at(RCV_INCLUDE_TABLES_CONTRACT_OPT).as<vector<string>>();
-        
+
       for(string accstr : filter_accs) {
         uint64_t accname = eosio::string_to_name_strict(accstr);
         my->tables_filter.insert(accname);
         ilog("  filtering contract: ${a}", ("a",accstr));
       }
     }
-    
+
     my->init();
     ilog("Initialized receiver_plugin");
   }
@@ -1580,10 +1584,31 @@ void receiver_plugin::exporter_will_ack_blocks(uint32_t max_unconfirmed) {
 
 void receiver_plugin::ack_block(uint32_t block_num) {
   assert(my->exporter_will_ack);
-  if( block_num < my->exporter_acked_block ) {
-    elog("Exporter acked block=${a}, but block=${k} was already acknowledged",
-         ("a",block_num)("k",my->exporter_acked_block));
-    throw runtime_error("Exporter acked block below previuously acked one");
+  if( my->forked_at_block > 0 ) {
+    uint32_t wait_for_ack = my->forked_at_block - 1;
+
+    // ignore all confirmations for higher blocks until we receive fork-1 acknowledged
+    if( block_num > wait_for_ack ) {
+      ilog("Waiting for ${w} acknowledgement after a fork, received ack for block=${b}, ignoring it",
+           ("w",wait_for_ack)("b",block_num));
+      return;
+    }
+
+    if( block_num == wait_for_ack ) {
+      ilog("Received expected ack after a fork for block=${b}, resuming the flow", ("b",block_num));
+      my->forked_at_block = 0;
+    }
+    else {
+      ilog("Waiting for ${w} acknowledgement after a fork, received ack for a block prior to it: block=${b}",
+           ("w",wait_for_ack)("b",block_num));
+    }
+  }
+  else {
+    if( block_num < my->exporter_acked_block ) {
+      elog("Exporter acked block=${a}, but block=${k} was already acknowledged",
+           ("a",block_num)("k",my->exporter_acked_block));
+      throw runtime_error("Exporter acked block below previuously acked one");
+    }
   }
   my->exporter_acked_block = block_num;
   //dlog("Acked block=${b}", ("b",block_num));
