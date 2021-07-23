@@ -516,8 +516,9 @@ public:
 
   // if consumer fails to acknowledge on time, or processing queues get too big, we pacify the receiver
   bool check_pause() {
-    if (slowdown_requested || forked_at_block > 0 ||
-        (exporter_will_ack && head - exporter_acked_block >= exporter_max_unconfirmed) ||
+    if (slowdown_requested ||
+        (exporter_will_ack && (forked_at_block > 0 ||
+                               head - exporter_acked_block >= exporter_max_unconfirmed)) ||
         app().get_priority_queue().size() > max_queue_size ||
         (!interactive_mode && head == end_block_num -1)) {
 
