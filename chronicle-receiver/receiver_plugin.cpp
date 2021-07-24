@@ -695,6 +695,11 @@ public:
     received_blocks++;
 
     uint32_t    last_irreversible_num = result.last_irreversible.block_num;
+    if( last_irreversible_num < irreversible ) {
+      elog("Irreversible block in state history (${h}) is lower than the one last seen (${i})",
+           ("h", last_irreversible_num)("i", irreversible));
+      throw runtime_error("Irreversible block in state history is lower than the one last seen");
+    }
 
     uint32_t    block_num = result.this_block->block_num;
     checksum256 block_id = result.this_block->block_id;
