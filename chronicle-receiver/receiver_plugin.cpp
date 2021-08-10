@@ -1362,7 +1362,7 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       else {
         my->db = std::make_shared<chainbase::database>
           (dbdir, chainbase::database::read_write,
-           options.at(RCV_DBSIZE_OPT).as<uint32_t>() * 1024*1024);
+           1024ULL * 1024 * options.at(RCV_DBSIZE_OPT).as<uint32_t>() );
       }
 
       my->db->add_index<chronicle::state_index>();
