@@ -355,7 +355,7 @@ public:
   chronicle::channels::receiver_pauses::channel_type::handle     _receiver_pauses_subscription;
   chronicle::channels::block_completed::channel_type::handle     _block_completed_subscription;
 
-  const int channel_priority = 50;
+  const int channel_priority = 55;
 
   // A static copy of JSON writer buffer in order to avoid reallocation
   rapidjson::StringBuffer impl_buffer;
