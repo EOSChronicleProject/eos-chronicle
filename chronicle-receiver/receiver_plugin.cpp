@@ -92,6 +92,7 @@ namespace {
   const char* RCV_BLACKLIST_ACTION_OPT = "blacklist-action";
   const char* RCV_ENABLE_TABLES_FILTER_OPT = "enable-tables-filter";
   const char* RCV_INCLUDE_TABLES_CONTRACT_OPT = "include-tables-contract";
+  const char* RCV_BLACKLIST_TABLES_CONTRACT_OPT = "blacklist-tables-contract";
 
   const char* RCV_MODE_SCAN = "scan";
   const char* RCV_MODE_SCAN_NOEXP = "scan-noexport";
@@ -301,8 +302,10 @@ public:
   bool                                  enable_auth_filter;
   set<uint64_t>                         auth_filter;
 
-  bool                                  enable_tables_filter;
+  bool                                  enable_tables_filter = false;
   set<uint64_t>                         tables_filter;
+  bool                                  enable_tables_blacklist = false;
+  set<uint64_t>                         tables_blacklist;
 
   bool                                  do_trace_filter; // true if any of trace filters is enabled
 
@@ -915,7 +918,14 @@ public:
           for (auto& row : bltd->table_delta.rows) {
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             from_bin(tru->kvo, row.data);
-            if (!enable_tables_filter || tables_filter.count(tru->kvo.code.value) > 0) {
+            bool take = true;
+            if (enable_tables_filter && tables_filter.count(tru->kvo.code.value) == 0) {
+              take = false;
+            }
+            if (enable_tables_blacklist && tables_blacklist.count(tru->kvo.code.value) > 0) {
+              take = false;
+            }
+            if (take) {
               if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
                 tru->block_num = head;
                 tru->block_timestamp = block_timestamp;
@@ -1318,6 +1328,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_BLACKLIST_ACTION_OPT, bpo::value<vector<string>>(), "contract:action to exclude from traces")
     (RCV_ENABLE_TABLES_FILTER_OPT, bpo::value<bool>()->default_value(false), "Filter table deltas by contract")
     (RCV_INCLUDE_TABLES_CONTRACT_OPT, bpo::value<vector<string>>(), "Contract account(s) to match in table deltas")
+    (RCV_BLACKLIST_TABLES_CONTRACT_OPT, bpo::value<vector<string>>(), "Blacklisted contract account(s) for table deltas")
     ;
 }
 
@@ -1519,6 +1530,16 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
         uint64_t accname = eosio::string_to_name_strict(accstr);
         my->tables_filter.insert(accname);
         ilog("  filtering contract: ${a}", ("a",accstr));
+      }
+    }
+
+    if( options.count(RCV_BLACKLIST_TABLES_CONTRACT_OPT) ) {
+      my->enable_tables_blacklist = true;
+      auto blacklist_table_accs = options.at(RCV_BLACKLIST_TABLES_CONTRACT_OPT).as<vector<string>>();
+      for(string accstr : blacklist_table_accs) {
+        uint64_t accname = eosio::string_to_name_strict(accstr);
+        my->tables_blacklist.insert(accname);
+        ilog("  blacklisted contract for table deltas: ${a}", ("a",accstr));
       }
     }
 

@@ -489,6 +489,10 @@ only
   the contract names for which table deltas would be included in the
   output.
 
+* `blacklist-tables-contract = NAME` This option allows excluding
+  contract names from table deltas. Multiple options can be specified,
+  and those contracts will be blacklisted from table deltas export.
+
 If both `enable-receiver-filter` and `enable-auth-filter` are enabled,
 the output will include traces matching any of the filters. The
 blacklist has absolute precedence: regardless of filters
