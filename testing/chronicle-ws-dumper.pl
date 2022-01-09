@@ -117,7 +117,7 @@ sub send_ack
 {
     my $conn = shift;
     $last_ack = $last_block;
-    $conn->send_binary(sprintf("%d", $last_ack));
+    $conn->send_binary(sprintf("%d", $last_ack - 1));
     print STDERR "ack $last_ack\n";
 }
 
