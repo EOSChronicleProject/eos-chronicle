@@ -241,7 +241,7 @@ add-apt-repository -y ppa:ubuntu-toolchain-r/test
 apt update && apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
 update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
-wget https://dl.bintray.com/boostorg/release/1.67.0/source/boost_1_67_0.tar.gz
+wget https://boostorg.jfrog.io/artifactory/main/release/1.67.0/source/boost_1_67_0.tar.gz
 tar -xvzf boost_1_67_0.tar.gz
 cd boost_1_67_0
 ./bootstrap.sh
