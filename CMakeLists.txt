@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.11)
-project(eos-chronicle VERSION 0.1 LANGUAGES CXX)
+project(eosio-chronicle VERSION 1.5)
 
 set(default_build_type "Release")
  
@@ -29,10 +29,10 @@ set(PLATFORM_SPECIFIC_LIBS pthread)
 
 set(CMAKE_BUILD_TYPE Debug)
 
-add_subdirectory(external/abieos)
-add_subdirectory(external/chainbase)
-add_subdirectory(external/appbase)
-add_subdirectory(external/fc)
+add_subdirectory(external/abieos EXCLUDE_FROM_ALL)
+add_subdirectory(external/chainbase EXCLUDE_FROM_ALL)
+add_subdirectory(external/appbase EXCLUDE_FROM_ALL)
+add_subdirectory(external/fc EXCLUDE_FROM_ALL)
 
 add_executable(chronicle-receiver
   external/abieos/src/abieos.cpp
@@ -61,8 +61,6 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(chronicle-receiver PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
 endif()
 
-
-
 ## Infrastructure for third-party plugins
 
 macro(chronicle_receiver_additional_plugin)
@@ -86,3 +84,6 @@ endforeach()
 
 ## Installables
 install(TARGETS chronicle-receiver RUNTIME DESTINATION sbin)
+
+include(package.cmake)
+include(CPack)
