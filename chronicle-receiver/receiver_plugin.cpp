@@ -1304,7 +1304,7 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
   cfg.add_options()
     (RCV_HOST_OPT, bpo::value<string>()->default_value("localhost"), "Host to connect to (nodeos)")
     (RCV_PORT_OPT, bpo::value<string>()->default_value("8080"), "Port to connect to (nodeos state-history plugin)")
-    (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(1024), "database size in MB")
+    (RCV_DBSIZE_OPT, bpo::value<uint32_t>()->default_value(16384), "database size in MB")
     (RCV_MODE_OPT, bpo::value<string>(), "Receiver mode. Values:\n"
      " scan:          \tread blocks sequentially and export\n"
      " scan-noexport: \tread blocks sequentially without export\n"
