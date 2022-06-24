@@ -19,28 +19,6 @@ below.
 `master` branch of Chronicle is compatible with releases 1.8 and 2.0
 of EOSIO `nodeos`.
 
-The release on January 13th 2020 is not backward compatible with
-on-disk data format of Chronicle. If you used Chronicle before, you
-either need to use `chroncile-1.2-backport` branch, or start nodeos
-from snapshot and start Chronicle with `--start-block` option.
-
-`chroncile-1.2-backport` branch is compatible with nodeos 1.8 and 2.0,
-while preserving backward compatibility with on-disk data created by
-older Chronicle versions. It is recommended to eventually update to
-release version because it uses newest `chainbase` library by Block
-One.
-
-`nodeos-1.8rc2` branch of Chronicle is only compatible with the release
-candidate (nodeos 1.8rc2) because the final release has different output
-format of state history.
-
-`nodeos-1.7` branch of Chronicle is compatible with `nodeos` releases
-prior to 1.8rc2 (all revisions of 1.7 and 1.6 releases should work with
-this version).
-
-The branch `nodeos-1.8rc2` is frozen and is not supposed to be
-updated. Critical updates will be added to `master` and `nodeos-1.7`
-branches.
 
 
 # chronicle-receiver
@@ -201,30 +179,8 @@ fixed in the future.
 3GB RAM is required for successful compilation. Smaller RAM will cause
 heavy swapping during the compilation.
 
-Ubuntu 19.10 instructions (deprecated; Ubuntu 19.10 is no longer supported):
-
-
-```
-apt update && \
-apt install -y git g++ cmake libboost-dev libboost-thread-dev libboost-test-dev \
- libboost-filesystem-dev libboost-date-time-dev libboost-system-dev libboost-iostreams-dev \
- libboost-program-options-dev libboost-locale-dev libssl-dev libgmp-dev zlib1g-dev
-
-mkdir build
-cd build
-git clone https://github.com/EOSChronicleProject/eos-chronicle.git
-cd eos-chronicle
-git submodule update --init --recursive
-mkdir build
-cd build
-cmake ..
-# use "make -j N" for N CPU cores for faster compiling (may require more RAM)
-make
-make install
-```
-
-Ubuntu 18.04 instructions. For 20.04, replace "bionic" with "focal" in
-`apt-add-repository`
+Ubuntu 18.04 and 20.04 instructions. For 20.04, replace "bionic" with
+"focal" in `apt-add-repository`
 
 
 ```
@@ -262,6 +218,8 @@ make
 make install
 ```
 
+If you need to generate a Debian package, run `cpack` in the build
+directory instead of `make install`.
 
 `examples/exp-dummy-plugin` explains how to add and compile your own plugin to `chronicle-receiver`.
 
@@ -404,7 +362,7 @@ The following options are available from command line and `config.ini`:
 * `port = PORT` (=`8080`): Port to connect to (nodeos with state-history
   plugin);
 
-* `receiver-state-db-size = N` (=`1024`): State database size in MB;
+* `receiver-state-db-size = N` (=`16384`): State database size in MB;
 
 * `mode = MODE`: mandatory receiver mode. Possible values:
 
@@ -520,14 +478,6 @@ Options for `exp_ws_plugin`:
 
 
 
-# Sample output
-
-At
-https://cloudflare-ipfs.com/ipfs/Qmb2JKi5PrYFBinXW2wbYS4A75YdhDRWEy1DLnPuxq8Hyj
-you can download about 31MB of gzipped JSON output. The raw output of
-`exp_ws_plugin` is prettyfied and separated by double newline
-characters.
-
 
 # Release notes
 
@@ -578,11 +528,18 @@ nodeos-1.7.
 * Bugfixes and improvements.
 
 
-## Release candidate 1.3
+## Release 1.3
 
 * New options for filtering: `enable-receiver-filter`,
   `include-receiver`, `enable-auth-filter`, `include-auth`,
   `blacklist-action`
+
+## Release 1.5
+
+* changed default value for receiver-state-db-size from 1024 to 16384
+
+* new option: blacklist-tables-contract
+
 
 
 # Ecosystem links
