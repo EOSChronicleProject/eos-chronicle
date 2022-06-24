@@ -540,6 +540,7 @@ nodeos-1.7.
 
 * new option: blacklist-tables-contract
 
+* Debian package builder and packages published on Github
 
 
 # Ecosystem links
