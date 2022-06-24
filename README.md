@@ -544,6 +544,8 @@ nodeos-1.7.
 
 # Ecosystem links
 
+* [Chronicle Telegram chat](https://t.me/+TMWWcV1gBxQiqIkm)
+
 * [Chronicle
   tutorial](https://github.com/EOSChronicleProject/chronicle-tutorial)
   explains the nodeos and Chronicle server installation in detail.
