@@ -1,0 +1,16 @@
+[submodule "external/abieos"]
+	path = external/abieos
+	url = https://github.com/eosnetworkfoundation/mandel-abieos.git
+	branch = main
+[submodule "external/appbase"]
+	path = external/appbase
+	url = https://github.com/eosnetworkfoundation/mandel-appbase.git
+	branch = main
+[submodule "external/chainbase"]
+	path = external/chainbase
+	url = https://github.com/eosnetworkfoundation/mandel-chainbase.git
+	branch = main
+[submodule "external/fc"]
+	path = external/fc
+	url = https://github.com/eosnetworkfoundation/mandel-fc.git
+	branch = main
