@@ -245,8 +245,8 @@ public:
     _account_metadata_updates_chan(app().get_channel<chronicle::channels::account_metadata_updates>()),
     _receiver_pauses_chan(app().get_channel<chronicle::channels::receiver_pauses>()),
     _block_completed_chan(app().get_channel<chronicle::channels::block_completed>()),
-    pause_timer(std::ref(app().get_io_service())),
-    stale_check_timer(std::ref(app().get_io_service()))
+    pause_timer(app().get_io_service()),
+    stale_check_timer(app().get_io_service())
   {};
 
   shared_ptr<chainbase::database>       db;
@@ -1405,9 +1405,9 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       my->db->add_index<chronicle::contract_abi_hist_index>();
     }
 
-    my->resolver = std::make_shared<tcp::resolver>(std::ref(app().get_io_service()));
+    my->resolver = std::make_shared<tcp::resolver>(app().get_io_service());
 
-    my->stream = std::make_shared<websocket::stream<tcp::socket>>(std::ref(app().get_io_service()));
+    my->stream = std::make_shared<websocket::stream<tcp::socket>>(app().get_io_service());
     my->stream->binary(true);
     my->stream->read_message_max(0x1ull<<36);
 
