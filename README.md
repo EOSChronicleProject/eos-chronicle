@@ -542,6 +542,14 @@ nodeos-1.7.
 
 * Debian package builder and packages published on Github
 
+## Release 1.6
+
+* Replaced external dependencies from B1 repo to our own repo
+
+* Debian package includes `/usr/local/share/chronicle_receiver@.service`
+
+
+
 
 # Ecosystem links
 

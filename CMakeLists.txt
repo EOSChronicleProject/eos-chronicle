@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.11)
-project(eosio-chronicle VERSION 1.5)
+project(eosio-chronicle VERSION 1.6)
 
 set(default_build_type "Release")
  
@@ -84,6 +84,7 @@ endforeach()
 
 ## Installables
 install(TARGETS chronicle-receiver RUNTIME DESTINATION sbin)
+install(FILES systemd/chronicle_receiver\@.service DESTINATION share)
 
 include(package.cmake)
 include(CPack)
