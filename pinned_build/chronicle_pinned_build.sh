@@ -19,15 +19,15 @@ fi
 if [ $# -eq 0 ] || [ -z "$1" ]
    then
       echo "Usage:"
-      echo "./pinned_build/chronicle_pinned_build.sh DEPS_DIR SRC_DIR JOBS"
+      echo "./pinned_build/chronicle_pinned_build.sh DEPS_DIR BUILD_DIR JOBS"
       echo "  DEPS_DIR: directory where to place build dependencies (same deps as for Mandel 3.1)"
-      echo "  SRC_DIR: Chronicle sourcces directory"
+      echo "  BUILD_DIR: build directory"
       echo "  JOBS: number of parallel processes"      
       exit -1
 fi
 
 DEP_DIR=$1
-CHRONICLE_SRC_DIR=$2
+BUILD_DIR=$2
 JOBS=$3
 CLANG_VER=11.0.1
 BOOST_VER=1.80.0
@@ -126,7 +126,7 @@ install_boost ${DEP_DIR}/boost_${BOOST_VER//\./_}
 # go back to the directory where the script starts
 popdir ${START_DIR}
 
-pushdir ${CHRONICLE_SRC_DIR}
+pushdir ${BUILD_DIR}
 
 # build Chronicle
 echo "Building Chronicle"
@@ -135,4 +135,4 @@ try cmake -DCMAKE_TOOLCHAIN_FILE=${SCRIPT_DIR}/chronicle_pinned_toolchain.cmake 
 try make -j${JOBS}
 try cpack
 
-echo "Chronicle has successfully built and constructed its packages.  You should be able to find the packages at ${CHRONICLE_SRC_DIR}.  Enjoy!!!"
+echo "Chronicle has successfully built and constructed its packages.  You should be able to find the packages at ${BUILD_DIR}."
