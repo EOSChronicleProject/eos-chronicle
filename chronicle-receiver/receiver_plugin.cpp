@@ -888,18 +888,11 @@ public:
       if (!var || !var->at(0).type->as_struct())
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
 
-      if( var->size() > 1 ) {
-        wlog("Variant type ${t} has more than one alternative, not supported yet", ("t", variant_type.name));
-        continue;
-      }
-
       size_t num_processed = 0;
-      for (auto& row : bltd->table_delta.rows) {
-        check_variant(row.data, variant_type, 0u);
-      }
 
       if ( !interactive_mode && bltd->table_delta.name == "account") {  // memorize contract ABI
         for (auto& row : bltd->table_delta.rows) {
+          check_variant(row.data, variant_type, 0u);
           if (row.present) {
             eosio::ship_protocol::account_v0 acc;
             from_bin(acc, row.data);
@@ -916,6 +909,7 @@ public:
         if (bltd->table_delta.name == "contract_row" &&
             (_table_row_updates_chan.has_subscribers() || _abi_errors_chan.has_subscribers())) {
           for (auto& row : bltd->table_delta.rows) {
+            check_variant(row.data, variant_type, 0u);
             auto tru = std::make_shared<chronicle::channels::table_row_update>();
             from_bin(tru->kvo, row.data);
             bool take = true;
@@ -947,6 +941,7 @@ public:
         else if (!skip_account_info) {
           if (bltd->table_delta.name == "permission" && _permission_updates_chan.has_subscribers() ) {
             for (auto& row : bltd->table_delta.rows) {
+              check_variant(row.data, variant_type, 0u);
               auto pu = std::make_shared<chronicle::channels::permission_update>();
               pu->block_num = head;
               pu->block_timestamp = block_timestamp;
@@ -958,6 +953,7 @@ public:
           }
           else if (bltd->table_delta.name == "permission_link" && _permission_link_updates_chan.has_subscribers() ) {
             for (auto& row : bltd->table_delta.rows) {
+              check_variant(row.data, variant_type, 0u);
               auto plu = std::make_shared<chronicle::channels::permission_link_update>();
               plu->block_num = head;
               plu->block_timestamp = block_timestamp;
@@ -969,6 +965,7 @@ public:
           }
           else if (bltd->table_delta.name == "account_metadata" && _account_metadata_updates_chan.has_subscribers() ) {
             for (auto& row : bltd->table_delta.rows) {
+              check_variant(row.data, variant_type, 0u);
               auto amu = std::make_shared<chronicle::channels::account_metadata_update>();
               amu->block_num = head;
               amu->block_timestamp = block_timestamp;
@@ -1158,12 +1155,28 @@ public:
              atrace != trace.action_traces.end();
              ++atrace ) {
 
-          auto &at = std::get<eosio::ship_protocol::action_trace_v0>(*atrace);
+          eosio::ship_protocol::action*   act;
+          eosio::name                     receiver;
+
+          size_t index = atrace->index();
+          if( index == 0 ) {
+            eosio::ship_protocol::action_trace_v0& at = std::get<eosio::ship_protocol::action_trace_v0>(*atrace);
+            act = &at.act;
+            receiver = at.receiver;
+          }
+          else if( index == 1 ) {
+            eosio::ship_protocol::action_trace_v1& at = std::get<eosio::ship_protocol::action_trace_v1>(*atrace);
+            act = &at.act;
+            receiver = at.receiver;
+          }
+          else {
+            throw std::runtime_error(string("Invalid variant option in action_trace: ") + std::to_string(index));
+          }
 
           // lookup in blacklist
-          auto search_acc = blacklist_actions.find(at.act.account.value);
+          auto search_acc = blacklist_actions.find(act->account.value);
           if( search_acc != blacklist_actions.end() ) {
-            if( search_acc->second.count(at.act.name.value) != 0 ) {
+            if( search_acc->second.count(act->name.value) != 0 ) {
               matched_blacklist = true;
               break;
             }
@@ -1171,7 +1184,7 @@ public:
 
           // check the receivers filter
           if( enable_rcvr_filter ) {
-            if( rcvr_filter.count(at.receiver.value) > 0 ) {
+            if( rcvr_filter.count(receiver.value) > 0 ) {
               matched_rcvr_filter = true;
               break;
             }
@@ -1179,7 +1192,7 @@ public:
 
           // check auth filter
           if( enable_auth_filter ) {
-            for( auto auth : at.act.authorization ) {
+            for( auto auth : act->authorization ) {
               if( auth_filter.count(auth.actor.value) > 0 ) {
                 matched_auth_filter = true;
                 break;
