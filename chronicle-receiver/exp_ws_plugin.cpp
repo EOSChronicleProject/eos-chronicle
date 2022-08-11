@@ -83,8 +83,8 @@ public:
   {};
 
   void init() {
-    ws = std::make_shared<wstream>(std::ref(app().get_io_service()));
-    mytimer = std::make_shared<boost::asio::deadline_timer>(std::ref(app().get_io_service()));
+    ws = std::make_shared<wstream>(app().get_io_service());
+    mytimer = std::make_shared<boost::asio::deadline_timer>(app().get_io_service());
 
     if (use_bin_headers) {
       _js_forks_subscription =
@@ -202,7 +202,7 @@ public:
       exporter_will_ack_blocks(maxunack);
 
     ilog("Connecting to websocket server ${h}:${p}", ("h",ws_host)("p",ws_port));
-    boost::asio::ip::tcp::resolver r(std::ref(app().get_io_service()));
+    boost::asio::ip::tcp::resolver r(app().get_io_service());
     auto const results = r.resolve(ws_host, ws_port);
     ws->binary(true);
     ws->auto_fragment(true);

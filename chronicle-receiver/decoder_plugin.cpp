@@ -102,7 +102,7 @@ namespace json_encoder {
     std::string result = fc::to_hex(obj.get_pos(), obj.remaining());
     state.writer.String(result.data(), result.size());
   }
-  
+
   inline void native_to_json(const bool& obj, native_to_json_state& state) {
     const char* str = obj ? "true" : "false";
     state.writer.String(str);
@@ -253,9 +253,13 @@ namespace json_encoder {
   template
   void native_to_json<eosio::ship_protocol::action_receipt_v0>(const eosio::ship_protocol::action_receipt_v0&,
                                                                native_to_json_state&);
-  
+
   template
   void native_to_json<eosio::ship_protocol::action_trace_v0>(const eosio::ship_protocol::action_trace_v0&,
+                                                             native_to_json_state&);
+
+  template
+  void native_to_json<eosio::ship_protocol::action_trace_v1>(const eosio::ship_protocol::action_trace_v1&,
                                                              native_to_json_state&);
 
   template
@@ -269,27 +273,36 @@ namespace json_encoder {
   template
   void native_to_json<eosio::ship_protocol::packed_transaction>(const eosio::ship_protocol::packed_transaction&,
                                                                 native_to_json_state&);
-  
+
   inline void native_to_json(const eosio::ship_protocol::action_receipt& obj, native_to_json_state& state) {
     native_to_json(std::get<eosio::ship_protocol::action_receipt_v0>(obj), state);
   }
-  
+
   inline void native_to_json(const eosio::ship_protocol::action_trace& obj, native_to_json_state& state) {
-    native_to_json(std::get<eosio::ship_protocol::action_trace_v0>(obj), state);
+    size_t index = obj.index();
+    if( index == 0 ) {
+      native_to_json(std::get<eosio::ship_protocol::action_trace_v0>(obj), state);
+    }
+    else if( index == 1 ) {
+      native_to_json(std::get<eosio::ship_protocol::action_trace_v1>(obj), state);
+    }
+    else {
+      throw std::runtime_error(string("Invalid variant option in action_trace: ") + std::to_string(index));
+    }
   }
-  
+
   inline void native_to_json(const eosio::ship_protocol::partial_transaction& obj, native_to_json_state& state) {
     native_to_json(std::get<eosio::ship_protocol::partial_transaction_v0>(obj), state);
   }
-  
+
   inline void native_to_json(const eosio::ship_protocol::transaction_trace& obj, native_to_json_state& state) {
     native_to_json(std::get<eosio::ship_protocol::transaction_trace_v0>(obj), state);
   }
-  
+
   inline void native_to_json(const eosio::ship_protocol::recurse_transaction_trace& obj, native_to_json_state& state) {
     native_to_json(obj.recurse, state);
   }
-  
+
 
   template <typename... Types>
   inline void native_to_json(const std::variant<Types...>& obj, native_to_json_state& state) {

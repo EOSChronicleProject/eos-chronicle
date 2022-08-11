@@ -1,7 +1,7 @@
 #include <appbase/application.hpp>
 #include <eosio/ship_protocol.hpp>
 #include <abieos.hpp>
-#include <eosio/abieos.h>
+#include <abieos.h>
 #include <boost/beast/core/flat_buffer.hpp>
 
 using namespace appbase;
@@ -45,7 +45,7 @@ namespace chronicle {
       uint32_t                             block_num;
       abieos::checksum256                  block_id;
       uint32_t                             last_irreversible;
-      eosio::ship_protocol::signed_block_v0   block;
+      eosio::ship_protocol::signed_block   block;
       std::shared_ptr<flat_buffer>         buffer;
     };
 
