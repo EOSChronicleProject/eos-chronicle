@@ -1,4 +1,0 @@
-[submodule "external"]
-	path = external
-	url = https://github.com/EOSChronicleProject/eosio-chronicle_1x-deps.git
-	branch = master
