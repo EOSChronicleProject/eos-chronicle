@@ -176,6 +176,7 @@ cd /opt/src/
 git clone https://github.com/EOSChronicleProject/eos-chronicle.git
 cd eos-chronicle
 git submodule update --init --recursive
+./pinned_build/install_deps.sh
 mkdir build
 nice ./pinned_build/chronicle_pinned_build.sh /opt/src/chronicle-deps /opt/src/eos-chronicle/build $(nproc)
 ```
