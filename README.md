@@ -1,6 +1,6 @@
 [![Actions Status: build](https://github.com/EOSChronicleProject/eos-chronicle/workflows/build/badge.svg)](https://github.com/EOSChronicleProject/eos-chronicle/actions/workflows/build.yml/badge.svg)
 
-# EOS Chronicle Project
+# EOSIO Chronicle Project
 
 This project is an implementation of work proposal as published at
 https://github.com/cc32d9/eos-work-proposals/tree/master/001_EOS_Chronicle
@@ -12,12 +12,6 @@ The first stage of the project is to produce a feed of blockchain events
 that could be consumed by other components for further
 processing. `chronicle-receiver` is implementing this as described
 below.
-
-
-# Git branches
-
-`master` branch of Chronicle is compatible with releases 1.8 and 2.0
-of EOSIO `nodeos`.
 
 
 
@@ -173,55 +167,18 @@ integers separated by minus sign (-) indicating a range of blocks.
 
 Minimum requirements: Cmake 3.11, Boost 1.67, GCC 8.3.0.
 
-As of now, Chronicle cannot compile with Boost 1.71. This will be
-fixed in the future.
-
-3GB RAM is required for successful compilation. Smaller RAM will cause
-heavy swapping during the compilation.
-
-Ubuntu 18.04 and 20.04 instructions. For 20.04, replace "bionic" with
-"focal" in `apt-add-repository`
-
+The pinned build script will produce a Debian package and a binary
+archive.
 
 ```
-apt install -y gnupg software-properties-common
-wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
-
-# 18.04
-apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
-# 20.04
-# apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
-
-add-apt-repository -y ppa:ubuntu-toolchain-r/test
-
-apt update && apt install -y git g++-8 cmake libssl-dev libgmp-dev zlib1g-dev
-update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 800 --slave /usr/bin/g++ g++ /usr/bin/g++-8
-
-wget https://boostorg.jfrog.io/artifactory/main/release/1.67.0/source/boost_1_67_0.tar.gz
-tar -xvzf boost_1_67_0.tar.gz
-cd boost_1_67_0
-./bootstrap.sh
-# use " ./b2 install -j N" for N CPU cores for faster compiling (may require more RAM)
-./b2 install 
-cd ..
-
-mkdir build
-cd build
+mkdir -p /opt/src/
+cd /opt/src/
 git clone https://github.com/EOSChronicleProject/eos-chronicle.git
 cd eos-chronicle
 git submodule update --init --recursive
 mkdir build
-cd build
-cmake ..
-# use "make -j N" for N CPU cores for faster compiling (may require more RAM)
-make
-make install
+nice ./pinned_build/chronicle_pinned_build.sh /opt/src/chronicle-deps /opt/src/eos-chronicle/build $(nproc)
 ```
-
-If you need to generate a Debian package, run `cpack` in the build
-directory instead of `make install`.
-
-`examples/exp-dummy-plugin` explains how to add and compile your own plugin to `chronicle-receiver`.
 
 
 
@@ -232,7 +189,7 @@ In order for Chronicle to function properly, both `trace-history` and
 output needs to be present in Chronicle output,
 `trace-history-debug-mode` needs to be enabled too.
 
-Example `config.ini` for nodeos version 1.8 or 2.0:
+Example `config.ini` for `nodeos`:
 
 ```
 contracts-console = true
@@ -255,19 +212,11 @@ See the [Chronicle
 tutorial](https://github.com/EOSChronicleProject/chronicle-tutorial)
 for a more detailed and complete example.
 
-Further in this example, we use Linux user `eosio` for running the receiver, and
-`/home/eosio/chronicle-config` as configuration directory, although you
-may choose other names.
-
 Here's a minimal configuration for the receiver using Websocket
 exporter. It connects to `nodeos` process running `state_history_plugin`
 at `localhost:8080` and exports the data to a websocket server at
 `localhost:8800`. In a production environment, hosts may be different
 machines in the network.
-
-The example introduces a custom systemd unit file. Chronicle
-distribution offers also `systemd/chronicle_receiver\@.service` that
-can be used in production.
 
 The receiver would stop immediately if the websocket server is not
 responding. For further tests, you need a consumer server ready.
@@ -275,11 +224,9 @@ responding. For further tests, you need a consumer server ready.
 The Perl script `testing/chronicle-ws-dumper.pl` can be used as a test
 websocket server that dumps the input to standard output.
 
-
 ```
-mkdir /home/eosio/chronicle-config
-cat >/home/eosio/chronicle-config/config.ini <<'EOT'
-# connection to nodeos state_history_plugin
+mkdir -p /srv/memento_wax1/chronicle-config
+cat >/srv/memento_wax1/chronicle-config/config.ini <<'EOT'
 host = 127.0.0.1
 port = 8080
 mode = scan
@@ -292,42 +239,33 @@ EOT
 # Start the receiver to check that everything is working as
 # expected. Use Ctrl-C to stop it.
 /usr/local/sbin/chronicle-receiver \
-  --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
+  --config-dir=/srv/memento_wax1/chronicle-config --data-dir=/srv/memento_wax1/chronicle-data
 
-# Prepare for long-term run inside a systemd unit
+# install systemd unit file
+cp /usr/local/share/chronicle_receiver\@.service /etc/systemd/system/
+systemctl daemon-reload
 
-cat >/home/eosio/chronicle-config/chronicle-receiver.service <<'EOT'
-[Unit]
-Description=EOS Chronicle receiver
-[Service]
-Type=simple
-ExecStart=/usr/local/sbin/chronicle-receiver --config-dir=/home/eosio/chronicle-config --data-dir=/home/eosio/chronicle-data
-TimeoutStopSec=300s
-Restart=on-success
-RestartSec=10
-User=eosio
-Group=eosio
-KillMode=control-group
-[Install]
-WantedBy=multi-user.target
-EOT
+# You may need to initialize the Chronicle database from the first block
+# in the state history archive. See the Chronicle Tutorial for more
+# details. You may point it to some other state history source during
+# the initialization. Here we launch it in scan-noexport mode for faster initialization.
+/usr/local/sbin/chronicle-receiver --config-dir=/srv/memento_wax1/chronicle-config \
+ --data-dir=/srv/memento_wax1/chronicle-data \
+ --host=my.ship.host.domain.com --port=8080 \
+ --start-block=186332760 --mode=scan-noexport --end-block=186332800
 
-sudo cp /home/eosio/chronicle-config/chronicle-receiver.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable chronicle-receiver
-sudo systemctl start chronicle-receiver
-# check the status
-sudo systemctl status chronicle-receiver
+
+# Once it stops at the end block, launch the service
+systemctl enable chronicle_receiver@memento_wax1
+systemctl start chronicle_receiver@memento_wax1
+
+# watch the log
+journalctl -u memento_dbwriter@wax1 -f
 ```
 
 Only one exporter plugin can be activated at a time (as of now, only
 one is implemented, but it can be changed in the future).
 
-If you need to move or copy the state data, flush the system cache first:
-
-```
-sync; echo 3 > /proc/sys/vm/drop_caches
-```
 
 # Command-line and configuration options
 
@@ -547,6 +485,14 @@ nodeos-1.7.
 * Replaced external dependencies from B1 repo to our own repo
 
 * Debian package includes `/usr/local/share/chronicle_receiver@.service`
+
+## Release 2.0
+
+* Added compatibility with Mandel 3.1
+
+* Added pinned_build scripts, fixating on Boost 1.80.0 and Clang 11.0.1
+
+* The state database is not compatible with 1.6 state, so Chronicle needs to be reinitialized.
 
 
 
