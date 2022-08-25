@@ -489,12 +489,15 @@ nodeos-1.7.
 
 ## Release 2.0
 
-* Added compatibility with Mandel 3.1
+* Added compatibility with Leap 3.1
 
 * Added pinned_build scripts, fixating on Boost 1.80.0 and Clang 11.0.1
 
 * The state database is not compatible with 1.6 state, so Chronicle needs to be reinitialized.
 
+## Release 2.1
+
+* Bugfix: primary_key resolved as boolean in decoder_plugin.cpp
 
 
 
