@@ -103,11 +103,6 @@ namespace json_encoder {
     state.writer.String(result.data(), result.size());
   }
 
-  inline void native_to_json(const bool& obj, native_to_json_state& state) {
-    const char* str = obj ? "true" : "false";
-    state.writer.String(str);
-  }
-
   inline void native_to_json(const varuint32& obj, native_to_json_state& state) {
     arithmetic_to_json(obj.value, state);
   }
@@ -248,6 +243,11 @@ namespace json_encoder {
       static_assert(std::is_arithmetic_v<T>);
       arithmetic_to_json(obj, state);
     }
+  }
+
+  inline void native_to_json(const bool& obj, native_to_json_state& state) {
+    const char* str = obj ? "true" : "false";
+    state.writer.String(str);
   }
 
   template
