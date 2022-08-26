@@ -888,8 +888,6 @@ public:
       if (!var || !var->at(0).type->as_struct())
         throw std::runtime_error("don't know how to proccess " + variant_type.name);
 
-      size_t num_processed = 0;
-
       if ( !interactive_mode && bltd->table_delta.name == "account") {  // memorize contract ABI
         for (auto& row : bltd->table_delta.rows) {
           check_variant(row.data, variant_type, 0u);
