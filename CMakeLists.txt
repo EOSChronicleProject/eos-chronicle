@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.11)
-project(eosio-chronicle VERSION 2.1)
+project(eosio-chronicle VERSION 2.2)
 
 set(default_build_type "Release")
  

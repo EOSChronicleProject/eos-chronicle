@@ -499,6 +499,11 @@ nodeos-1.7.
 
 * Bugfix: primary_key resolved as boolean in decoder_plugin.cpp
 
+## Release 2.2
+
+* Bugfix: ack for a block lower than the previously aknowledged was crashing chronicle
+
+
 
 
 # Ecosystem links
