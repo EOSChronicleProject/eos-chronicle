@@ -69,7 +69,16 @@ install_clang() {
    if [ ! -d "${CLANG_DIR}" ]; then
       echo "Installing Clang ${CLANG_VER} @ ${CLANG_DIR}"
       mkdir -p ${CLANG_DIR}
-      CLANG_FN=clang+llvm-${CLANG_VER}-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+      if [ ${ARCH} = x86_64 ]; then
+         CLANG_FN=clang+llvm-${CLANG_VER}-x86_64-linux-gnu-ubuntu-16.04.tar.xz
+      else 
+	 if [ ${ARCH} = aarch64 ]; then
+            CLANG_FN=clang+llvm-${CLANG_VER}-aarch64-linux-gnu.tar.xz
+	 else
+            echo "Unknown ARCH: $ARCH"
+            exit 1
+	 fi
+      fi
       try wget https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VER}/${CLANG_FN}
       try tar -xvf ${CLANG_FN} -C ${CLANG_DIR}
       pushdir ${CLANG_DIR}
