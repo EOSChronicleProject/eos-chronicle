@@ -503,6 +503,9 @@ nodeos-1.7.
 
 * Bugfix: ack for a block lower than the previously aknowledged was crashing chronicle
 
+## Release 2.3
+
+* Bugfix: if action arguments or a table row contained trailing garbage, Chronicle failed to decode it.
 
 
 
