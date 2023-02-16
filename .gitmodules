@@ -1,6 +1,6 @@
 [submodule "external/abieos"]
 	path = external/abieos
-	url = https://github.com/eosnetworkfoundation/mandel-abieos.git
+	url = https://github.com/cc32d9/abieos.git
 	branch = ship_20x_31x_fixes
 [submodule "external/appbase"]
 	path = external/appbase
