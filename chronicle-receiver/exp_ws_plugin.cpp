@@ -225,9 +225,9 @@ public:
 
 
   void close_ws(boost::beast::websocket::close_reason reason) {
-    ws->next_layer().cancel();
     if( ws->is_open() ) {
-      ilog("Closing websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));
+      ilog("Closing the export websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));
+      ws->next_layer().cancel();
       ws->async_close(reason, app().get_priority_queue().wrap(ws_priority, [&](error_code ec) {
             if (ec) elog(ec.message());
             abort_receiver();
