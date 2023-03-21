@@ -507,6 +507,9 @@ nodeos-1.7.
 
 * Bugfix: if action arguments or a table row contained trailing garbage, Chronicle failed to decode it.
 
+## Release 2.4
+
+* Bugfix: consumer sending websocket close message causes a crash
 
 
 # Ecosystem links
