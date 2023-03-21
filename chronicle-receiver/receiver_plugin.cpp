@@ -1292,10 +1292,11 @@ public:
   }
 
   void close() {
-    if( stream.use_count() > 0 && stream->is_open() ) {
+    if( !aborting && stream.use_count() > 0 && stream->is_open() ) {
       stream->next_layer().close();
+      ilog("closed the receiver websocket connection");
+      aborting = true;
     }
-    aborting = true;
   }
 };
 
@@ -1594,6 +1595,7 @@ void receiver_plugin::plugin_startup(){
 
 
 void receiver_plugin::plugin_shutdown() {
+  my->close();
   ilog("receiver_plugin stopped");
 }
 
