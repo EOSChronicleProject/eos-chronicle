@@ -256,6 +256,7 @@ public:
   shared_ptr<tcp::resolver>             resolver;
   shared_ptr<websocket::stream<tcp::socket>> stream;
   const int                             stream_priority = 40;
+  const int                             stream_order = 1000;
 
   string                                host;
   string                                port;
@@ -474,7 +475,7 @@ public:
     auto in_buffer = make_shared<flat_buffer>();
     stream->async_read
       (*in_buffer,
-       app().get_priority_queue().wrap(stream_priority, [this, in_buffer](const error_code ec, size_t) {
+       app().executor().get_priority_queue().wrap(stream_priority, stream_order, [this, in_buffer](const error_code ec, size_t) {
            callback(ec, "async_read", [&] {
                receive_abi(in_buffer);
                receiver_ready = true;
@@ -490,8 +491,8 @@ public:
     stale_check_last_head = head;
     stale_check_timer.expires_from_now(boost::posix_time::milliseconds(stale_check_deadline_msec));
     stale_check_timer.async_wait
-      (app().get_priority_queue().wrap
-       (stream_priority,
+      (app().executor().get_priority_queue().wrap
+       (stream_priority, stream_order,
         [this](const error_code ec) {
           callback(ec, "async_wait", [&] {
                                        check_stale_head();
@@ -506,7 +507,7 @@ public:
       auto in_buffer = make_shared<flat_buffer>();
       stream->async_read
         (*in_buffer,
-         app().get_priority_queue().wrap(stream_priority, [this, in_buffer](const error_code ec, size_t) {
+         app().executor().get_priority_queue().wrap(stream_priority, stream_order, [this, in_buffer](const error_code ec, size_t) {
              callback(ec, "async_read", [&] {
                  if (!receive_result(in_buffer))
                    return;
@@ -522,7 +523,7 @@ public:
     if (slowdown_requested ||
         (exporter_will_ack && (forked_at_block > 0 ||
                                head - exporter_acked_block >= exporter_max_unconfirmed)) ||
-        app().get_priority_queue().size() > max_queue_size ||
+        app().executor().get_priority_queue().size() > max_queue_size ||
         (!interactive_mode && head == end_block_num -1)) {
 
       if ( head == end_block_num -1 && irreversible >= head &&
@@ -550,7 +551,7 @@ public:
 
       pause_timer.expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
       pause_timer.async_wait
-        (app().get_priority_queue().wrap(stream_priority, [this](const error_code ec) {
+        (app().executor().get_priority_queue().wrap(stream_priority, stream_order, [this](const error_code ec) {
             callback(ec, "async_wait", [&] {
                 continue_read();
               });
@@ -569,8 +570,8 @@ public:
       stale_check_last_head = head;
       stale_check_timer.expires_from_now(boost::posix_time::milliseconds(stale_check_deadline_msec));
       stale_check_timer.async_wait
-        (app().get_priority_queue().wrap
-         (stream_priority,
+        (app().executor().get_priority_queue().wrap
+         (stream_priority, stream_order,
           [this](const error_code ec) {
             callback(ec, "async_wait", [&] {
                                          check_stale_head();
@@ -817,7 +818,7 @@ public:
     if (interactive_mode) {
       if (report_every > 0 && head % report_every == 0) {
         ilog("block=${h}; irreversible=${i}", ("h",head)("i",irreversible));
-        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+        ilog("appbase priority queue size: ${q}", ("q", app().executor().get_priority_queue().size()));
       }
     }
     else {
@@ -832,7 +833,7 @@ public:
         if( exporter_will_ack )
           ilog("Exporter acknowledged block=${b}, unacknowledged=${u}",
                ("b", exporter_acked_block)("u", head-exporter_acked_block));
-        ilog("appbase priority queue size: ${q}", ("q", app().get_priority_queue().size()));
+        ilog("appbase priority queue size: ${q}", ("q", app().executor().get_priority_queue().size()));
       }
     }
 

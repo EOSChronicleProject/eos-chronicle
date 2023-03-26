@@ -25,7 +25,7 @@ using boost::beast::flat_buffer;
 using boost::system::error_code;
 
 
-static appbase::abstract_plugin& _exp_ws_plugin = app().register_plugin<exp_ws_plugin>();
+static auto _exp_ws_plugin = app().register_plugin<exp_ws_plugin>();
 
 namespace {
   const char* WS_HOST_OPT = "exp-ws-host";
@@ -63,6 +63,7 @@ public:
   using wstream = boost::beast::websocket::stream<boost::asio::ip::tcp::socket>;
   std::shared_ptr<wstream> ws;
   const int ws_priority = 60;
+  const int ws_order = 1000;
 
   rapidjson::StringBuffer json_buffer;
   rapidjson::Writer<rapidjson::StringBuffer> json_writer;
@@ -228,7 +229,7 @@ public:
     if( ws->is_open() ) {
       ilog("Closing the export websocket connection to ${h}:${p}", ("h",ws_host)("p",ws_port));
       ws->next_layer().cancel();
-      ws->async_close(reason, app().get_priority_queue().wrap(ws_priority, [&](error_code ec) {
+      ws->async_close(reason, app().executor().get_priority_queue().wrap(ws_priority, ws_order, [&](error_code ec) {
             if (ec) elog(ec.message());
             abort_receiver();
           }));
@@ -244,7 +245,7 @@ public:
     auto in_buffer = std::make_shared<flat_buffer>();
     ws->async_read
       (*in_buffer,
-       app().get_priority_queue().wrap(ws_priority, [this, in_buffer](error_code ec, size_t) {
+       app().executor().get_priority_queue().wrap(ws_priority, ws_order, [this, in_buffer](error_code ec, size_t) {
            if (ec) {
              close_ws(boost::beast::websocket::close_code::unknown_data);
            }
@@ -267,7 +268,7 @@ public:
     auto in_buffer = std::make_shared<flat_buffer>();
     ws->async_read
       (*in_buffer,
-       app().get_priority_queue().wrap(ws_priority, [this, in_buffer](error_code ec, size_t) {
+       app().executor().get_priority_queue().wrap(ws_priority, ws_order, [this, in_buffer](error_code ec, size_t) {
            if (ec) {
              close_ws(boost::beast::websocket::close_code::unknown_data);
            }
@@ -306,7 +307,7 @@ public:
       }
 
       mytimer->expires_from_now(boost::posix_time::milliseconds(pause_time_msec));
-      mytimer->async_wait(app().get_priority_queue().wrap(ws_priority, [this](const error_code ec) {
+      mytimer->async_wait(app().executor().get_priority_queue().wrap(ws_priority, ws_order, [this](const error_code ec) {
             async_send_events();
           }));
     }
@@ -323,7 +324,7 @@ public:
       async_out_buffer = boost::asio::const_buffer(async_msg->data(), async_msg->size());
       ws->async_write
         (async_out_buffer,
-         app().get_priority_queue().wrap(ws_priority, [this](error_code ec, size_t) {
+         app().executor().get_priority_queue().wrap(ws_priority, ws_order, [this](error_code ec, size_t) {
              if (ec) {
                elog("ERROR writing to websocket: ${e}", ("e",ec.message()));
                close_ws(boost::beast::websocket::close_code::unknown_data);
