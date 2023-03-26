@@ -10,7 +10,3 @@
 	path = external/chainbase
 	url = https://github.com/eosnetworkfoundation/mandel-chainbase.git
 	branch = main
-[submodule "external/fc"]
-	path = external/fc
-	url = https://github.com/eosnetworkfoundation/mandel-fc.git
-	branch = main
