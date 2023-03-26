@@ -10,3 +10,7 @@
 	path = external/chainbase
 	url = https://github.com/eosnetworkfoundation/mandel-chainbase.git
 	branch = main
+[submodule "external/leap"]
+	path = external/leap
+	url = https://github.com/AntelopeIO/leap.git
+	branch = release/4.0
