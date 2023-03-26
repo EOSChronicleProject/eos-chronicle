@@ -262,6 +262,20 @@ systemctl start chronicle_receiver@memento_wax1
 journalctl -u memento_dbwriter@wax1 -f
 ```
 
+Alternatively, Chronicle data can be downloaded from an archive at
+https://snapshots.eosamsterdam.net/public/chronicle-2.x/ like in the
+example below:
+
+```
+cd /srv/memento_wax1
+curl https://snapshots.eosamsterdam.net/public/chronicle-2.x/chronicle-data_wax_201836000.tar.gz | tar xzSvf -
+systemctl enable chronicle_receiver@memento_wax1
+systemctl start chronicle_receiver@memento_wax1
+```
+
+
+
+
 Only one exporter plugin can be activated at a time (as of now, only
 one is implemented, but it can be changed in the future).
 
@@ -508,6 +522,10 @@ nodeos-1.7.
 ## Release 2.4
 
 * Bugfix: consumer sending websocket close message causes a crash
+
+## Release 2.5
+
+* Updated external dependencies to match Leap 4.0
 
 
 # Ecosystem links
