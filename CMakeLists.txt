@@ -12,6 +12,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 
+set(CHRONICLE_RECEIVER_NAME "chronicle-receiver" CACHE INTERNAL "")
+
 include(GNUInstallDirs)
 
 SET(Boost_USE_STATIC_LIBS ON CACHE STRING "ON or OFF")
@@ -29,7 +31,7 @@ add_subdirectory(external/leap/libraries/chainbase EXCLUDE_FROM_ALL)
 add_subdirectory(external/leap/libraries/appbase EXCLUDE_FROM_ALL)
 add_subdirectory(external/leap/libraries/libfc EXCLUDE_FROM_ALL)
 
-add_executable(chronicle-receiver
+add_executable(${CHRONICLE_RECEIVER_NAME}
   external/abieos/src/abieos.cpp
   chronicle-receiver/main.cpp
   chronicle-receiver/receiver_plugin.cpp
@@ -47,13 +49,13 @@ include_directories(
   external/fc/include
   ${Boost_INCLUDE_DIR})
 
-target_link_libraries(chronicle-receiver
+target_link_libraries(${CHRONICLE_RECEIVER_NAME}
   PRIVATE abieos chainbase appbase fc
   PUBLIC Boost::date_time Boost::system Boost::iostreams Boost::program_options z pthread)
 
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(chronicle-receiver PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
+    target_compile_options(${CHRONICLE_RECEIVER_NAME} PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
 endif()
 
 ## Infrastructure for third-party plugins
@@ -73,12 +75,12 @@ foreach(ADDITIONAL_PLUGIN_SOURCE_DIR ${CHRONICLE_RECEIVER_ADDITIONAL_PLUGINS})
 endforeach()
 
 foreach(ADDITIONAL_PLUGIN_TARGET ${ADDITIONAL_PLUGINS_TARGET})
-  target_link_libraries(chronicle-receiver PRIVATE -Wl,${whole_archive_flag} ${ADDITIONAL_PLUGIN_TARGET} -Wl,${no_whole_archive_flag} )
+  target_link_libraries(${CHRONICLE_RECEIVER_NAME} PRIVATE -Wl,${whole_archive_flag} ${ADDITIONAL_PLUGIN_TARGET} -Wl,${no_whole_archive_flag} )
 endforeach()
 
 
 ## Installables
-install(TARGETS chronicle-receiver RUNTIME DESTINATION sbin)
+install(TARGETS ${CHRONICLE_RECEIVER_NAME} RUNTIME DESTINATION sbin)
 install(FILES systemd/chronicle_receiver\@.service DESTINATION share)
 
 include(package.cmake)

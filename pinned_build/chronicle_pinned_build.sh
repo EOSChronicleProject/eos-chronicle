@@ -139,7 +139,7 @@ pushdir ${BUILD_DIR}
 
 # build Chronicle
 echo "Building Chronicle"
-try cmake -DCMAKE_TOOLCHAIN_FILE=${SCRIPT_DIR}/chronicle_pinned_toolchain.cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=${LLVM_DIR}/lib/cmake -DCMAKE_PREFIX_PATH=${BOOST_DIR}/bin ${SCRIPT_DIR}/..
+try cmake -DCMAKE_TOOLCHAIN_FILE=${SCRIPT_DIR}/chronicle_pinned_toolchain.cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=${LLVM_DIR}/lib/cmake -DCMAKE_PREFIX_PATH=${BOOST_DIR}/bin ${MORE_PINNED_BUILD_FLAGS} ${SCRIPT_DIR}/..
 
 try make -j${JOBS}
 try cpack
