@@ -425,6 +425,7 @@ void exp_ws_plugin::plugin_initialize( const variables_map& options ) {
     return;
 
   try {
+    app().get_plugin("decoder_plugin").initialize(options);
     donot_start_receiver_before(this, "exp_ws_plugin");
 
     bool opt_missing = false;

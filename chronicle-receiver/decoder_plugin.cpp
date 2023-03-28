@@ -21,6 +21,7 @@ using namespace abieos;
 using std::make_shared;
 using std::string;
 
+static auto _decoder_plugin = app().register_plugin<decoder_plugin>();
 
 
 namespace json_encoder {

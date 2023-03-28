@@ -1,8 +1,8 @@
-cmake_minimum_required (VERSION 3.11)
+cmake_minimum_required (VERSION 3.13)
 project(eosio-chronicle VERSION 2.5)
 
 set(default_build_type "RelWithDebInfo")
- 
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Setting build type to '${default_build_type}' as none was specified.")
   set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
@@ -13,6 +13,7 @@ endif()
 
 
 set(CHRONICLE_RECEIVER_NAME "chronicle-receiver" CACHE INTERNAL "")
+set(CHRONICLE_JSON_EXPORT TRUE CACHE INTERNAL "")
 
 include(GNUInstallDirs)
 
@@ -35,9 +36,15 @@ add_executable(${CHRONICLE_RECEIVER_NAME}
   external/abieos/src/abieos.cpp
   chronicle-receiver/main.cpp
   chronicle-receiver/receiver_plugin.cpp
-  chronicle-receiver/decoder_plugin.cpp
-  chronicle-receiver/exp_ws_plugin.cpp
-)
+  )
+
+if(CHRONICLE_JSON_EXPORT)
+  target_sources(${CHRONICLE_RECEIVER_NAME} PUBLIC
+    chronicle-receiver/decoder_plugin.cpp
+    chronicle-receiver/exp_ws_plugin.cpp
+    )
+endif()
+
 
 include_directories(
   chronicle-receiver
