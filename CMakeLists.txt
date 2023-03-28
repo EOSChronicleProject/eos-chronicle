@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.11)
 project(eosio-chronicle VERSION 2.5)
 
-set(default_build_type "Release")
+set(default_build_type "RelWithDebInfo")
  
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Setting build type to '${default_build_type}' as none was specified.")
@@ -18,16 +18,11 @@ SET(Boost_USE_STATIC_LIBS ON CACHE STRING "ON or OFF")
 FIND_PACKAGE(Boost 1.67 REQUIRED COMPONENTS
 thread unit_test_framework filesystem date_time system iostreams program_options)
 
-#list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/fc/CMakeModules")
-#include(SetupTargetMacros)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PLATFORM_SPECIFIC_LIBS pthread)
-
-set(CMAKE_BUILD_TYPE Debug)
 
 add_subdirectory(external/abieos EXCLUDE_FROM_ALL)
 add_subdirectory(external/leap/libraries/chainbase EXCLUDE_FROM_ALL)
