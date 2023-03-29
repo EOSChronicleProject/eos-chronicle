@@ -48,12 +48,12 @@ endif()
 
 include_directories(
   chronicle-receiver
-  external/appbase/include
+  external/leap/libraries/appbase/include
   external/abieos/src
   external/abieos/external/rapidjson/include
   external/abieos/include
-  external/chainbase/include
-  external/fc/include
+  external/leap/libraries/chainbase/include
+  external/leap/libraries/libfc/include
   ${Boost_INCLUDE_DIR})
 
 target_link_libraries(${CHRONICLE_RECEIVER_NAME}
