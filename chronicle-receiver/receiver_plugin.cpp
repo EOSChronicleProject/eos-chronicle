@@ -349,6 +349,11 @@ public:
 
 
   void start() {
+    resolver = std::make_shared<tcp::resolver>(app().get_io_service());
+    stream = std::make_shared<websocket::stream<tcp::socket>>(app().get_io_service());
+    stream->binary(true);
+    stream->read_message_max(0x1ull<<36);
+
     if (!interactive_mode)
       load_state();
     resolver->async_resolve
@@ -1417,12 +1422,6 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       my->db->add_index<chronicle::contract_abi_index>();
       my->db->add_index<chronicle::contract_abi_hist_index>();
     }
-
-    my->resolver = std::make_shared<tcp::resolver>(app().get_io_service());
-
-    my->stream = std::make_shared<websocket::stream<tcp::socket>>(app().get_io_service());
-    my->stream->binary(true);
-    my->stream->read_message_max(0x1ull<<36);
 
     my->host = options.at(RCV_HOST_OPT).as<string>();
     my->port = options.at(RCV_PORT_OPT).as<string>();
