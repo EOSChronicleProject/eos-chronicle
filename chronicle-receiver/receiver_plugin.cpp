@@ -1062,7 +1062,9 @@ public:
         abiupd->block_num = head;
         abiupd->block_timestamp = block_timestamp;
         abiupd->account = account;
+        abiupd->bin_start = data.get_pos();
         from_bin(abiupd->abi, data);
+        abiupd->bin_size = data.get_pos() - abiupd->bin_start;
         _abi_updates_chan.publish(channel_priority, abiupd);
       }
     }

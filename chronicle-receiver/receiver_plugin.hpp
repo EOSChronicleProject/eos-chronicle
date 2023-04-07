@@ -93,6 +93,8 @@ namespace chronicle {
       eosio::block_timestamp          block_timestamp;
       abieos::name                    account;
       abieos::abi_def                 abi;
+      const char*                     bin_start;
+      size_t                          bin_size;
     };
 
     EOSIO_REFLECT(abi_update, block_num, block_timestamp, account, abi);
