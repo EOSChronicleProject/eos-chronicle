@@ -1679,13 +1679,15 @@ void receiver_plugin::abort_receiver() {
 }
 
 
-void receiver_plugin::walk_abi_history(void (*callback)(uint64_t account, uint32_t block_index,
-                                                        const char* abi_data, size_t abi_size))
+void receiver_plugin::walk_abi_history(std::function<void (uint64_t account, uint32_t block_index,
+                                                           const char* abi_data, size_t abi_size)> callback)
 {
   const auto& idx = my->db->get_index<chronicle::contract_abi_hist_index, chronicle::by_id>();
   auto itr = idx.begin();
   while( itr != idx.end() ) {
-    callback(itr->account, itr->block_index, itr->abi.data(), itr->abi.size());
+    if( itr->abi.size() > 0 ) {
+      callback(itr->account, itr->block_index, itr->abi.data(), itr->abi.size());
+    }
     ++itr;
   }
 }

@@ -212,8 +212,8 @@ public:
   void add_dependency(appbase::abstract_plugin* plug, string plugname);
   void abort_receiver();
 
-  void walk_abi_history(void (*callback)(uint64_t account, uint32_t block_index,
-                                         const char* abi_data, size_t abi_size));
+  void walk_abi_history(std::function<void (uint64_t account, uint32_t block_index,
+                                            const char* abi_data, size_t abi_size)>);
 private:
   std::unique_ptr<class receiver_plugin_impl> my;
   std::vector<std::tuple<appbase::abstract_plugin*, std::string>> dependent_plugins;
