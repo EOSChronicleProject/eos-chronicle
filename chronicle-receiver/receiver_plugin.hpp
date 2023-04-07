@@ -41,6 +41,16 @@ namespace chronicle {
 
     using forks     = channel_decl<struct forks_tag, std::shared_ptr<fork_event>>;
 
+
+    struct block_begins {
+      uint32_t                        block_num;
+      eosio::block_timestamp          block_timestamp;
+    };
+
+    EOSIO_REFLECT(block_begins, block_num, block_timestamp);
+
+    using block_started = channel_decl<struct block_started_tag, std::shared_ptr<block_begins>>;
+
     struct block {
       uint32_t                             block_num;
       abieos::checksum256                  block_id;
@@ -70,6 +80,8 @@ namespace chronicle {
       eosio::block_timestamp                   block_timestamp;
       eosio::ship_protocol::transaction_trace  trace;
       std::shared_ptr<flat_buffer>             buffer;
+      const char*                              bin_start;
+      size_t                                   bin_size;
     };
 
     EOSIO_REFLECT(transaction_trace, block_num, block_timestamp, trace);

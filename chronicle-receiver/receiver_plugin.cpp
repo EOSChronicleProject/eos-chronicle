@@ -233,6 +233,7 @@ class receiver_plugin_impl : std::enable_shared_from_this<receiver_plugin_impl> 
 public:
   receiver_plugin_impl() :
     _forks_chan(app().get_channel<chronicle::channels::forks>()),
+    _block_started_chan(app().get_channel<chronicle::channels::block_started>()),
     _blocks_chan(app().get_channel<chronicle::channels::blocks>()),
     _block_table_deltas_chan(app().get_channel<chronicle::channels::block_table_deltas>()),
     _transaction_traces_chan(app().get_channel<chronicle::channels::transaction_traces>()),
@@ -311,6 +312,7 @@ public:
   bool                                  do_trace_filter; // true if any of trace filters is enabled
 
   chronicle::channels::forks::channel_type&               _forks_chan;
+  chronicle::channels::block_started::channel_type&       _block_started_chan;
   chronicle::channels::blocks::channel_type&              _blocks_chan;
   chronicle::channels::block_table_deltas::channel_type&  _block_table_deltas_chan;
   chronicle::channels::transaction_traces::channel_type&  _transaction_traces_chan;
@@ -772,6 +774,13 @@ public:
     irreversible    = last_irreversible_num;
     irreversible_id = result.last_irreversible.block_id;
 
+    if( _block_started_chan.has_subscribers() ) {
+      auto bb = std::make_shared<chronicle::channels::block_begins>();
+      bb->block_num = head;
+      bb->block_timestamp = block_timestamp;
+      _block_started_chan.publish(channel_priority, bb);
+    }
+
     if (result.block)
       receive_block(*result.block, p);
 
@@ -1148,7 +1157,9 @@ public:
       for (uint32_t i = 0; i < num; ++i) {
         auto tr = std::make_shared<chronicle::channels::transaction_trace>();
         tr->buffer = p;
+        tr->bin_start = bin.get_pos();
         from_bin(tr->trace, bin);
+        tr->bin_size = bin.get_pos() - tr->bin_start;
 
         // check blacklist and filter
         bool matched_blacklist = false;
