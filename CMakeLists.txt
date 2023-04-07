@@ -62,7 +62,7 @@ target_link_libraries(${CHRONICLE_RECEIVER_NAME}
 
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(${CHRONICLE_RECEIVER_NAME} PRIVATE -Wall -Wextra -Wno-unused-parameter -fcolor-diagnostics)
+    target_compile_options(${CHRONICLE_RECEIVER_NAME} PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations -fcolor-diagnostics)
 endif()
 
 ## Infrastructure for third-party plugins
