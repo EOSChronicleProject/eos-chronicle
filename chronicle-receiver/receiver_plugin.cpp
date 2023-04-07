@@ -996,24 +996,25 @@ public:
 
 
   void clear_contract_abi(name account) {
-    if( contract_abi_imported.count(account.value) > 0 )
+    if( contract_abi_imported.count(account.value) > 0 ) {
       init_contract_abi_ctxt(); // abieos_contract does not support removals, so we have to destroy it
-    {
-      const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
-      auto itr = idx.find(account.value);
-      if( itr != idx.end() ) {
-        // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
-        db->remove(*itr);
-
-        auto ar =  std::make_shared<chronicle::channels::abi_removal>();
-        ar->block_num = head;
-        ar->block_timestamp = block_timestamp;
-        ar->account = account;
-        _abi_removals_chan.publish(channel_priority, ar);
-      }
     }
-    eosio::input_stream empty_buf;
-    save_contract_abi_history(account, empty_buf);
+
+    const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+    auto itr = idx.find(account.value);
+    if( itr != idx.end() ) {
+      // dlog("Clearing contract ABI for ${a}", ("a",(std::string)account));
+      db->remove(*itr);
+
+      auto ar =  std::make_shared<chronicle::channels::abi_removal>();
+      ar->block_num = head;
+      ar->block_timestamp = block_timestamp;
+      ar->account = account;
+      _abi_removals_chan.publish(channel_priority, ar);
+
+      eosio::input_stream empty_buf;
+      save_contract_abi_history(account, empty_buf);
+    }
   }
 
 
@@ -1685,9 +1686,7 @@ void receiver_plugin::walk_abi_history(std::function<void (uint64_t account, uin
   const auto& idx = my->db->get_index<chronicle::contract_abi_hist_index, chronicle::by_id>();
   auto itr = idx.begin();
   while( itr != idx.end() ) {
-    if( itr->abi.size() > 0 ) {
-      callback(itr->account, itr->block_index, itr->abi.data(), itr->abi.size());
-    }
+    callback(itr->account, itr->block_index, itr->abi.data(), itr->abi.size());
     ++itr;
   }
 }
