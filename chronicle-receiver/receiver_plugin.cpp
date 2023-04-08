@@ -774,13 +774,6 @@ public:
     irreversible    = last_irreversible_num;
     irreversible_id = result.last_irreversible.block_id;
 
-    if( _block_started_chan.has_subscribers() ) {
-      auto bb = std::make_shared<chronicle::channels::block_begins>();
-      bb->block_num = head;
-      bb->block_timestamp = block_timestamp;
-      _block_started_chan.publish(channel_priority, bb);
-    }
-
     if (result.block)
       receive_block(*result.block, p);
 
@@ -878,6 +871,14 @@ public:
 
     from_bin(block_ptr->block, bin);
     block_timestamp = block_ptr->block.timestamp;
+
+    if( _block_started_chan.has_subscribers() ) {
+      auto bb = std::make_shared<chronicle::channels::block_begins>();
+      bb->block_num = head;
+      bb->block_timestamp = block_timestamp;
+      _block_started_chan.publish(channel_priority, bb);
+    }
+
     if (!skip_block_events) {
       _blocks_chan.publish(channel_priority, block_ptr);
     }
