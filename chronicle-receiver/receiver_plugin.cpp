@@ -1170,21 +1170,19 @@ public:
         bool matched_auth_filter = false;
         auto& trace = std::get<eosio::ship_protocol::transaction_trace_v0>(tr->trace);
 
-        for( auto atrace = trace.action_traces.begin();
-             atrace != trace.action_traces.end();
-             ++atrace ) {
+        for( auto& atrace: trace.action_traces ) {
 
           eosio::ship_protocol::action*   act;
           eosio::name                     receiver;
 
-          size_t index = atrace->index();
+          size_t index = atrace.index();
           if( index == 0 ) {
-            eosio::ship_protocol::action_trace_v0& at = std::get<eosio::ship_protocol::action_trace_v0>(*atrace);
+            eosio::ship_protocol::action_trace_v0& at = std::get<eosio::ship_protocol::action_trace_v0>(atrace);
             act = &at.act;
             receiver = at.receiver;
           }
           else if( index == 1 ) {
-            eosio::ship_protocol::action_trace_v1& at = std::get<eosio::ship_protocol::action_trace_v1>(*atrace);
+            eosio::ship_protocol::action_trace_v1& at = std::get<eosio::ship_protocol::action_trace_v1>(atrace);
             act = &at.act;
             receiver = at.receiver;
           }
