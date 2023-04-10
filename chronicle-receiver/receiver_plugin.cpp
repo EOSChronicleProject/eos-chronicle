@@ -160,9 +160,9 @@ namespace chronicle {
     uint64_t                  account;
     chainbase::shared_string  abi;
 
-    void set_abi(const eosio::input_stream& data) {
-      abi.resize(data.remaining(), {});
-      abi.assign(data.get_pos(), data.remaining());
+    void set_abi(const char* data, size_t size) {
+      abi.resize(size, {});
+      abi.assign(data, size);
     }
   };
 
@@ -184,9 +184,9 @@ namespace chronicle {
     uint32_t                  block_index;
     chainbase::shared_string  abi;
 
-    void set_abi(const eosio::input_stream& data) {
-      abi.resize(data.remaining(), {});
-      abi.assign(data.get_pos(), data.remaining());
+    void set_abi(const char* data, size_t size) {
+      abi.resize(size, {});
+      abi.assign(data, size);
     }
   };
 
@@ -1022,8 +1022,8 @@ public:
       ar->account = account;
       _abi_removals_chan.publish(channel_priority, ar);
 
-      eosio::input_stream empty_buf;
-      save_contract_abi_history(account, empty_buf);
+      string empty_string;
+      save_contract_abi_history(account, empty_string.data(), empty_string.size());
     }
   }
 
@@ -1034,6 +1034,9 @@ public:
     if( contract_abi_imported.count(account.value) > 0 ) {
       init_contract_abi_ctxt();
     }
+
+    const char* bin_start = data.get_pos();
+    size_t bin_size = data.remaining();
 
     try {
       // this checks the validity of ABI
@@ -1047,13 +1050,13 @@ public:
         auto itr = idx.find(account.value);
         if( itr != idx.end() ) {
           db->modify( *itr, [&]( chronicle::contract_abi_object& o ) {
-              o.set_abi(data);
+            o.set_abi(bin_start, bin_size);
             });
         }
         else {
           db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
               o.account = account.value;
-              o.set_abi(data);
+              o.set_abi(bin_start, bin_size);
             });
         }
       }
@@ -1063,9 +1066,8 @@ public:
         abiupd->block_num = head;
         abiupd->block_timestamp = block_timestamp;
         abiupd->account = account;
-        abiupd->bin_start = data.get_pos();
+        abiupd->binary.assign(bin_start, bin_start + bin_size);
         from_bin(abiupd->abi, data);
-        abiupd->bin_size = data.get_pos() - abiupd->bin_start;
         _abi_updates_chan.publish(channel_priority, abiupd);
       }
     }
@@ -1079,24 +1081,24 @@ public:
       _abi_errors_chan.publish(channel_priority, ae);
     }
 
-    save_contract_abi_history(account, data);
+    save_contract_abi_history(account, bin_start, bin_size);
   }
 
 
-  void save_contract_abi_history(name account, eosio::input_stream& data) {
+  void save_contract_abi_history(name account, const char* data, size_t size) {
     const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block>();
     auto itr = idx.find(boost::make_tuple(account.value, head));
     if( itr != idx.end() ) {
       wlog("Multiple setabi for ${a} in the same block ${h}", ("a",(std::string)account)("h",head));
       db->modify( *itr, [&]( chronicle::contract_abi_history& o ) {
-          o.set_abi(data);
+        o.set_abi(data, size);
         });
     }
     else {
       db->create<chronicle::contract_abi_history>( [&]( chronicle::contract_abi_history& o ) {
           o.account = account.value;
           o.block_index = head;
-          o.set_abi(data);
+          o.set_abi(data, size);
         });
     }
     /* debugging */
