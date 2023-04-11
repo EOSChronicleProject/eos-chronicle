@@ -990,7 +990,10 @@ public:
           }
         }
       }
-      _block_table_deltas_chan.publish(channel_priority, bltd);
+
+      if( _block_table_deltas_chan.has_subscribers() ) {
+        _block_table_deltas_chan.publish(channel_priority, bltd);
+      }
     }
   } // receive_deltas
 
