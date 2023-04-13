@@ -550,11 +550,11 @@ public:
         pause_time_msec *= 2;
       }
 
+      auto rp = std::make_shared<chronicle::channels::receiver_pause>();
+      rp->head = head;
+      rp->acknowledged = exporter_acked_block;
+      _receiver_pauses_chan.publish(channel_priority, rp);
       if( pause_time_msec >= 1000 ) {
-        auto rp = std::make_shared<chronicle::channels::receiver_pause>();
-        rp->head = head;
-        rp->acknowledged = exporter_acked_block;
-        _receiver_pauses_chan.publish(channel_priority, rp);
         ilog("Pausing the reader");
       }
 
