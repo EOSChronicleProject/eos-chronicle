@@ -182,13 +182,19 @@ namespace chronicle {
     using receiver_pauses = channel_decl<struct receiver_pauses_tag, std::shared_ptr<receiver_pause>>;
 
     struct block_finished {
-      uint32_t                        block_num;
-      abieos::checksum256             block_id;
-      eosio::block_timestamp          block_timestamp;
-      uint32_t                        last_irreversible;
+      uint32_t                          block_num;
+      abieos::checksum256               block_id;
+      eosio::block_timestamp            block_timestamp;
+      abieos::name                      producer;
+      abieos::checksum256               previous;
+      abieos::checksum256               transaction_mroot;
+      abieos::checksum256               action_mroot;
+      uint32_t                          trx_count;
+      uint32_t                          last_irreversible;
     };
 
-    EOSIO_REFLECT(block_finished, block_num, block_id, block_timestamp, last_irreversible);
+    EOSIO_REFLECT(block_finished, block_num, block_id, block_timestamp, producer, previous, transaction_mroot,
+                  action_mroot, trx_count, last_irreversible);
 
     using block_completed = channel_decl<struct block_completed_tag, std::shared_ptr<block_finished>>;
 

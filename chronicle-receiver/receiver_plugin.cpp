@@ -286,7 +286,8 @@ public:
   uint32_t                              irreversible    = 0;
   checksum256                           irreversible_id = {};
   uint32_t                              first_bulk      = 0;
-  eosio::block_timestamp                block_timestamp;
+  eosio::ship_protocol::block_header    block_header;
+  uint32_t                              trx_count;
   uint32_t                              received_blocks = 0;
 
   // needed for decoding state history input
@@ -816,7 +817,12 @@ public:
     bf->block_num = head;
     bf->block_id = head_id;
     bf->last_irreversible = irreversible;
-    bf->block_timestamp = block_timestamp;
+    bf->block_timestamp = block_header.timestamp;
+    bf->producer = block_header.producer;
+    bf->previous = block_header.previous;
+    bf->transaction_mroot = block_header.transaction_mroot;
+    bf->action_mroot = block_header.action_mroot;
+    bf->trx_count = trx_count;
     _block_completed_chan.publish(channel_priority, bf);
 
     if( aborting )
@@ -870,12 +876,13 @@ public:
     block_ptr->buffer = p;
 
     from_bin(block_ptr->block, bin);
-    block_timestamp = block_ptr->block.timestamp;
+    block_header = block_ptr->block;
+    trx_count = block_ptr->block.transactions.size();
 
     if( _block_started_chan.has_subscribers() ) {
       auto bb = std::make_shared<chronicle::channels::block_begins>();
       bb->block_num = head;
-      bb->block_timestamp = block_timestamp;
+      bb->block_timestamp = block_header.timestamp;
       _block_started_chan.publish(channel_priority, bb);
     }
 
@@ -893,7 +900,7 @@ public:
       check_variant(bin, get_type("table_delta"), "table_delta_v0");
 
       auto bltd = std::make_shared<chronicle::channels::block_table_delta>();
-      bltd->block_timestamp = block_timestamp;
+      bltd->block_timestamp = block_header.timestamp;
       bltd->buffer = p;
 
 
@@ -936,7 +943,7 @@ public:
             if (take) {
               if( get_contract_abi_ready(tru->kvo.code, interactive_mode) ) {
                 tru->block_num = head;
-                tru->block_timestamp = block_timestamp;
+                tru->block_timestamp = block_header.timestamp;
                 tru->buffer = p;
                 tru->added = row.present;
                 _table_row_updates_chan.publish(channel_priority, tru);
@@ -944,7 +951,7 @@ public:
               else {
                 auto ae =  std::make_shared<chronicle::channels::abi_error>();
                 ae->block_num = head;
-                ae->block_timestamp = block_timestamp;
+                ae->block_timestamp = block_header.timestamp;
                 ae->account = tru->kvo.code;
                 ae->error = "cannot decode table delta because of missing ABI";
                 _abi_errors_chan.publish(channel_priority, ae);
@@ -958,7 +965,7 @@ public:
               check_variant(row.data, variant_type, 0u);
               auto pu = std::make_shared<chronicle::channels::permission_update>();
               pu->block_num = head;
-              pu->block_timestamp = block_timestamp;
+              pu->block_timestamp = block_header.timestamp;
               pu->buffer = p;
               from_bin(pu->permission, row.data);
               pu->added = row.present;
@@ -970,7 +977,7 @@ public:
               check_variant(row.data, variant_type, 0u);
               auto plu = std::make_shared<chronicle::channels::permission_link_update>();
               plu->block_num = head;
-              plu->block_timestamp = block_timestamp;
+              plu->block_timestamp = block_header.timestamp;
               plu->buffer = p;
               from_bin(plu->permission_link, row.data);
               plu->added = row.present;
@@ -982,7 +989,7 @@ public:
               check_variant(row.data, variant_type, 0u);
               auto amu = std::make_shared<chronicle::channels::account_metadata_update>();
               amu->block_num = head;
-              amu->block_timestamp = block_timestamp;
+              amu->block_timestamp = block_header.timestamp;
               amu->buffer = p;
               from_bin(amu->account_metadata, row.data);
               _account_metadata_updates_chan.publish(channel_priority, amu);
@@ -1021,7 +1028,7 @@ public:
 
       auto ar =  std::make_shared<chronicle::channels::abi_removal>();
       ar->block_num = head;
-      ar->block_timestamp = block_timestamp;
+      ar->block_timestamp = block_header.timestamp;
       ar->account = account;
       _abi_removals_chan.publish(channel_priority, ar);
 
@@ -1067,7 +1074,7 @@ public:
       if (_abi_updates_chan.has_subscribers()) {
         auto abiupd = std::make_shared<chronicle::channels::abi_update>();
         abiupd->block_num = head;
-        abiupd->block_timestamp = block_timestamp;
+        abiupd->block_timestamp =block_header.timestamp;
         abiupd->account = account;
         abiupd->binary.assign(bin_start, bin_start + bin_size);
         from_bin(abiupd->abi, data);
@@ -1078,7 +1085,7 @@ public:
       wlog("Cannot use ABI for ${a}: ${e}", ("a",(std::string)account)("e",e.what()));
       auto ae = std::make_shared<chronicle::channels::abi_error>();
       ae->block_num = head;
-      ae->block_timestamp = block_timestamp;
+      ae->block_timestamp = block_header.timestamp;
       ae->account = account;
       ae->error = e.what();
       _abi_errors_chan.publish(channel_priority, ae);
@@ -1231,7 +1238,7 @@ public:
               (enable_rcvr_filter && matched_rcvr_filter) ||
               (enable_auth_filter && matched_auth_filter) ) {
             tr->block_num = head;
-            tr->block_timestamp = block_timestamp;
+            tr->block_timestamp = block_header.timestamp;
             _transaction_traces_chan.publish(channel_priority, tr);
           }
         }
