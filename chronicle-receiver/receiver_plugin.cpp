@@ -310,7 +310,8 @@ public:
   bool                                  enable_tables_blacklist = false;
   set<uint64_t>                         tables_blacklist;
 
-  bool                                  do_trace_filter; // true if any of trace filters is enabled
+  bool                                  do_trace_filter = false; // true if any of trace filters is enabled
+  bool                                  do_trace_blacklist = false;
 
   chronicle::channels::forks::channel_type&               _forks_chan;
   chronicle::channels::block_started::channel_type&       _block_started_chan;
@@ -1180,56 +1181,60 @@ public:
         bool matched_blacklist = false;
         bool matched_rcvr_filter = false;
         bool matched_auth_filter = false;
-        auto& trace = std::get<eosio::ship_protocol::transaction_trace_v0>(tr->trace);
 
-        for( auto& atrace: trace.action_traces ) {
+        if( do_trace_filter || do_trace_blacklist ) {
+          auto& trace = std::get<eosio::ship_protocol::transaction_trace_v0>(tr->trace);
+          for( auto& atrace: trace.action_traces ) {
 
-          eosio::ship_protocol::action*   act;
-          eosio::name                     receiver;
+            eosio::ship_protocol::action*   act;
+            eosio::name                     receiver;
 
-          size_t index = atrace.index();
-          if( index == 0 ) {
-            eosio::ship_protocol::action_trace_v0& at = std::get<eosio::ship_protocol::action_trace_v0>(atrace);
-            act = &at.act;
-            receiver = at.receiver;
-          }
-          else if( index == 1 ) {
-            eosio::ship_protocol::action_trace_v1& at = std::get<eosio::ship_protocol::action_trace_v1>(atrace);
-            act = &at.act;
-            receiver = at.receiver;
-          }
-          else {
-            throw std::runtime_error(string("Invalid variant option in action_trace: ") + std::to_string(index));
-          }
-
-          // lookup in blacklist
-          auto search_acc = blacklist_actions.find(act->account.value);
-          if( search_acc != blacklist_actions.end() ) {
-            if( search_acc->second.count(act->name.value) != 0 ) {
-              matched_blacklist = true;
-              break;
+            size_t index = atrace.index();
+            if( index == 0 ) {
+              eosio::ship_protocol::action_trace_v0& at = std::get<eosio::ship_protocol::action_trace_v0>(atrace);
+              act = &at.act;
+              receiver = at.receiver;
             }
-          }
-
-          // check the receivers filter
-          if( enable_rcvr_filter ) {
-            if( rcvr_filter.count(receiver.value) > 0 ) {
-              matched_rcvr_filter = true;
-              break;
+            else if( index == 1 ) {
+              eosio::ship_protocol::action_trace_v1& at = std::get<eosio::ship_protocol::action_trace_v1>(atrace);
+              act = &at.act;
+              receiver = at.receiver;
             }
-          }
+            else {
+              throw std::runtime_error(string("Invalid variant option in action_trace: ") + std::to_string(index));
+            }
 
-          // check auth filter
-          if( enable_auth_filter ) {
-            for( auto auth : act->authorization ) {
-              if( auth_filter.count(auth.actor.value) > 0 ) {
-                matched_auth_filter = true;
+            // lookup in blacklist
+            if( do_trace_blacklist ) {
+              auto search_acc = blacklist_actions.find(act->account.value);
+              if( search_acc != blacklist_actions.end() ) {
+                if( search_acc->second.count(act->name.value) != 0 ) {
+                  matched_blacklist = true;
+                  break;
+                }
+              }
+            }
+
+            // check the receivers filter
+            if( enable_rcvr_filter ) {
+              if( rcvr_filter.count(receiver.value) > 0 ) {
+                matched_rcvr_filter = true;
                 break;
               }
             }
 
-            if( matched_auth_filter )
-              break;
+            // check auth filter
+            if( enable_auth_filter ) {
+              for( auto auth : act->authorization ) {
+                if( auth_filter.count(auth.actor.value) > 0 ) {
+                  matched_auth_filter = true;
+                  break;
+                }
+              }
+
+              if( matched_auth_filter )
+                break;
+            }
           }
         }
 
@@ -1515,15 +1520,18 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       }
     }
 
-    my->do_trace_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
+    if( my->enable_rcvr_filter || my->enable_auth_filter ) {
+      my->do_trace_filter = true;
+    }
 
-    vector<string> blacklist_str({string("eosio:onblock")});
+    vector<string> blacklist_str;
 
     if( options.count(RCV_BLACKLIST_ACTION_OPT) ) {
       auto blacklist_entries = options.at(RCV_BLACKLIST_ACTION_OPT).as<vector<string>>();
       for(string bl_entry : blacklist_entries) {
         blacklist_str.emplace_back(bl_entry);
       }
+      my->do_trace_blacklist = true;
     }
 
     for( auto blpair : blacklist_str ) {
