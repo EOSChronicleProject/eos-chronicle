@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.13)
-project(eosio-chronicle VERSION 2.5)
+project(eosio-chronicle VERSION 3.0)
 
 set(default_build_type "RelWithDebInfo")
 
