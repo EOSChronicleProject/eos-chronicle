@@ -544,7 +544,7 @@ public:
       }
 
       if( pause_time_msec == 0 ) {
-        pause_time_msec = 100;
+        pause_time_msec = 25;
       }
       else if( pause_time_msec < 8000 ) {
         pause_time_msec *= 2;
