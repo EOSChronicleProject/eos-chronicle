@@ -544,17 +544,17 @@ public:
       }
 
       if( pause_time_msec == 0 ) {
-        pause_time_msec = 25;
+        pause_time_msec = 50;
       }
-      else if( pause_time_msec < 8000 ) {
-        pause_time_msec *= 2;
+      else if( pause_time_msec < 500 ) {
+        pause_time_msec += 50;
       }
 
       auto rp = std::make_shared<chronicle::channels::receiver_pause>();
       rp->head = head;
       rp->acknowledged = exporter_acked_block;
       _receiver_pauses_chan.publish(channel_priority, rp);
-      if( pause_time_msec >= 1000 ) {
+      if( pause_time_msec >= 500 ) {
         ilog("Pausing the reader");
       }
 
