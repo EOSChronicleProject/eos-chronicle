@@ -45,6 +45,7 @@ namespace chronicle {
     struct block_begins {
       uint32_t                        block_num;
       eosio::block_timestamp          block_timestamp;
+      uint32_t                        last_irreversible;
     };
 
     EOSIO_REFLECT(block_begins, block_num, block_timestamp);
