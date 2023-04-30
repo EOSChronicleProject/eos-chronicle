@@ -327,6 +327,7 @@ class decoder_plugin_impl : std::enable_shared_from_this<decoder_plugin_impl> {
 public:
   decoder_plugin_impl():
     _js_forks_chan(app().get_channel<chronicle::channels::js_forks>()),
+    _js_block_started_chan(app().get_channel<chronicle::channels::js_block_started>()),
     _js_blocks_chan(app().get_channel<chronicle::channels::js_blocks>()),
     _js_transaction_traces_chan(app().get_channel<chronicle::channels::js_transaction_traces>()),
     _js_abi_updates_chan(app().get_channel<chronicle::channels::js_abi_updates>()),
@@ -343,6 +344,7 @@ public:
   {}
 
   chronicle::channels::js_forks::channel_type&               _js_forks_chan;
+  chronicle::channels::js_block_started::channel_type&       _js_block_started_chan;
   chronicle::channels::js_blocks::channel_type&              _js_blocks_chan;
   chronicle::channels::js_transaction_traces::channel_type&  _js_transaction_traces_chan;
   chronicle::channels::js_abi_updates::channel_type&         _js_abi_updates_chan;
@@ -357,6 +359,7 @@ public:
   chronicle::channels::js_abi_decoder_errors::channel_type&  _js_abi_decoder_errors_chan;
 
   chronicle::channels::forks::channel_type::handle               _forks_subscription;
+  chronicle::channels::block_started::channel_type::handle       _block_started_subscription;
   chronicle::channels::blocks::channel_type::handle              _blocks_subscription;
   chronicle::channels::transaction_traces::channel_type::handle  _transaction_traces_subscription;
   chronicle::channels::abi_errors::channel_type::handle          _abi_errors_subscription;
@@ -392,6 +395,13 @@ public:
         app().get_channel<chronicle::channels::forks>().subscribe
         ([this](std::shared_ptr<chronicle::channels::fork_event> fe){
           on_fork(fe);
+        });
+    }
+    if (_js_block_started_chan.has_subscribers()) {
+      _block_started_subscription =
+        app().get_channel<chronicle::channels::block_started>().subscribe
+        ([this](std::shared_ptr<chronicle::channels::block_begins> bb){
+          on_block_started(bb);
         });
     }
     if (_js_blocks_chan.has_subscribers()) {
@@ -477,6 +487,12 @@ public:
     auto output = make_shared<string>();
     impl_native_to_json(*fe, *output);
     _js_forks_chan.publish(channel_priority, output);
+  }
+
+  void on_block_started(std::shared_ptr<chronicle::channels::block_begins> bb) {
+    auto output = make_shared<string>();
+    impl_native_to_json(*bb, *output);
+    _js_block_started_chan.publish(channel_priority, output);
   }
 
   void on_block(std::shared_ptr<chronicle::channels::block> block_ptr) {

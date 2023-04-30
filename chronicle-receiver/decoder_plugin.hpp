@@ -6,6 +6,7 @@ namespace chronicle {
   // Channels published by decoder_plugin
   namespace channels {
     using js_forks               = channel_decl<struct js_forks_tag, std::shared_ptr<string>>;
+    using js_block_started       = channel_decl<struct js_block_started_tag, std::shared_ptr<string>>;
     using js_blocks              = channel_decl<struct js_blocks_tag, std::shared_ptr<string>>;
     using js_transaction_traces  = channel_decl<struct js_transaction_traces_tag, std::shared_ptr<string>>;
     using js_abi_updates         = channel_decl<struct js_abi_updates_tag, std::shared_ptr<string>>;
@@ -28,14 +29,11 @@ public:
   APPBASE_PLUGIN_REQUIRES();
   decoder_plugin();
   virtual ~decoder_plugin();
-  virtual void set_program_options(options_description& cli, options_description& cfg) override;  
+  virtual void set_program_options(options_description& cli, options_description& cfg) override;
   void plugin_initialize(const variables_map& options);
   void plugin_startup();
   void plugin_shutdown();
-  
+
 private:
   std::unique_ptr<class decoder_plugin_impl> my;
 };
-
-
-

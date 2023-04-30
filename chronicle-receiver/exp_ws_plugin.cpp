@@ -39,6 +39,7 @@ namespace {
 class exp_ws_plugin_impl : std::enable_shared_from_this<exp_ws_plugin_impl> {
 public:
   chronicle::channels::js_forks::channel_type::handle               _js_forks_subscription;
+  chronicle::channels::js_block_started::channel_type::handle       _js_block_started_subscription;
   chronicle::channels::js_blocks::channel_type::handle              _js_blocks_subscription;
   chronicle::channels::js_transaction_traces::channel_type::handle  _js_transaction_traces_subscription;
   chronicle::channels::js_abi_updates::channel_type::handle         _js_abi_updates_subscription;
@@ -90,6 +91,10 @@ public:
       _js_forks_subscription =
         app().get_channel<chronicle::channels::js_forks>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_FORK, 0, event); });
+
+      _js_block_started_subscription =
+        app().get_channel<chronicle::channels::js_block_started>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_bin(CHRONICLE_MSGTYPE_BLOCK_STARTED, 0, event); });
 
       _js_blocks_subscription =
         app().get_channel<chronicle::channels::js_blocks>().subscribe
@@ -145,6 +150,10 @@ public:
       _js_forks_subscription =
         app().get_channel<chronicle::channels::js_forks>().subscribe
         ([this](std::shared_ptr<string> event){ on_event_json("FORK", event); });
+
+      _js_block_started_subscription =
+        app().get_channel<chronicle::channels::js_block_started>().subscribe
+        ([this](std::shared_ptr<string> event){ on_event_json("BLOCK_STARTED", event); });
 
       _js_blocks_subscription =
         app().get_channel<chronicle::channels::js_blocks>().subscribe
