@@ -883,6 +883,7 @@ public:
     if( _block_started_chan.has_subscribers() ) {
       auto bb = std::make_shared<chronicle::channels::block_begins>();
       bb->block_num = head;
+      bb->block_id = head_id;
       bb->block_timestamp = block_header.timestamp;
       bb->last_irreversible = irreversible;
       _block_started_chan.publish(channel_priority, bb);

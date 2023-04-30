@@ -44,6 +44,7 @@ namespace chronicle {
 
     struct block_begins {
       uint32_t                        block_num;
+      abieos::checksum256             block_id;
       eosio::block_timestamp          block_timestamp;
       uint32_t                        last_irreversible;
     };
