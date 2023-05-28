@@ -1,18 +1,10 @@
 [![Actions Status: build](https://github.com/EOSChronicleProject/eos-chronicle/workflows/build/badge.svg)](https://github.com/EOSChronicleProject/eos-chronicle/actions/workflows/build.yml/badge.svg)
 
-# EOSIO Chronicle Project
+# Antelope Chronicle Project
 
-This project is an implementation of work proposal as published at
-https://github.com/cc32d9/eos-work-proposals/tree/master/001_EOS_Chronicle
-
-The goal is to build a scalable and reliable toolset for maintaining EOS
-blockchain history in a database.
-
-The first stage of the project is to produce a feed of blockchain events
-that could be consumed by other components for further
-processing. `chronicle-receiver` is implementing this as described
-below.
-
+Chronicle is a software component designed to process the history of
+an [Antelope](https://github.com/AntelopeIO/leap) (formely EOSIO)
+blockchain.
 
 
 # chronicle-receiver
@@ -26,27 +18,35 @@ The receiver can be compiled with a number of exporter plugins, and only
 one exporter plugin can be enabled in its configuration. Exporter
 plugins organize the data export to their respective consumers.
 
-Exporters must work in bidirectional mode: the exporter expects that the
-consumer acknowledges block numbers that it has processed and
+At the moment only one exporter plugin is implemented in the core
+Chronicle package: `exp_ws_plugin`. Also, a new project called
+"[chronos](https://github.com/EOSChronicleProject/chronos)" implments
+an exporter plugin that writes the blockchain updates directly in its
+database.
+
+Exporters must work in bidirectional mode: the exporter expects that
+the consumer acknowledges block numbers that it has processed and
 stored. Should `chronicle-receiver` stop, it will start from the block
-number next after acknowledged or last known irreversible, whichever is
-lower.
+number next after acknowledged or last known irreversible, whichever
+is lower.
 
 The communication between exporter and consumer is performed
 asynchronously: the receiver starts with a parameter indicating the
 maximum number of unacknowledged blocks (1000 by default), and it
 continues retrieving data from `nodeos` as long as the consumer
-confirms the blocks within this maximum. Received and decoded data is
-kept in a queue that is fed to the consumer, allowing it to process the
-data at its own pace. If the number of unacknowledged blocks reaches the
-maximum, the reader pauses itself with an increasing timer, varying from
-0.1 to 8 seconds. If the pause exceeds 1 second, an informational event
-is generated.
+confirms the blocks within this limit. Received and decoded data is
+kept in a queue that is fed to the consumer, allowing the consumer to
+process the data at its own pace. If the number of unacknowledged
+blocks reaches the maximum, the reader pauses itself with an
+increasing timer, varying from 0.05 to 0.5 seconds. If the pause
+exceeds 500 milliseconds, an informational message is printed on
+console output.
 
 If `nodeos` stops or restarts, `chronicle-receiver` will automatically
 stop and close its downstream connection. Also if the downstream
 connection closes, the receiver will stop itself and close the
-connection to `nodeos`.
+connection to `nodeos`. The package includes a systemd unit file which
+would restart the receiver automatically in this case.
 
 
 
@@ -58,11 +58,11 @@ follows:
 * it reads all available blocks sequentially from state history.
 
 * it monitors account changes, and as soon as a new ABI is set on a
-  contract, it stores a copy of ABI in its state memory. The state
+  contract, it stores a copy of the ABI in its state memory. The state
   memory keeps all revisions of every contract ABI.
 
-* upon receiving transaction traces and table deltas, it tries using the
-  ABI and decoding the raw binary data into the ABI-defined structures.
+* upon receiving transaction traces or table deltas, it tries to
+  decode the raw data using the available contract ABI.
 
 * all data received from `state_history_plugin` is converted to JSON
   format. If there's no valid ABI for decoding raw data, it's presented
@@ -77,7 +77,8 @@ follows:
 
 In `scan-noexport` mode, the receiver requests the blocks from state
 history sequentially and stores all revisions of contract ABI in its
-memory. This allows it to be quickly available for interactive mode.
+database. This allows the ABIs to be quickly available for the
+interactive mode.
 
 
 ## Interactive mode
@@ -92,14 +93,14 @@ for particular block number or a range of blocks. This request is passed
 to the receiver and requested from `state_history_plugin`. If a range is
 specified, blocks up to the last before the end block are exported.
 
-During request processing, the decoder retrieves required contract ABI
-from its ABI history, so that it's the latest copy from a block number
-that is below the requested block.
+During request processing, the decoder retrieves the required contract
+ABI from its ABI history, so that it's the latest copy from a block
+number that is below the requested block.
 
 Then, the same way as in scanning mode, decoded data is translated into
 JSON and passed to the exporter plugin.
 
-Receiver does not expect any acknowledgements in interactive mode.
+The receiver does not expect any acknowledgements in interactive mode.
 
 Only irreversible blocks are available for interactive mode.
 
@@ -139,23 +140,21 @@ binary stream.
 The plugin works in one of two possible modes:
 
 In JSON mode (`exp-ws-bin-header=false`), each outgoing message is a
-JSON object with two keys: `msgtype` indicates the type of the message,
-and `data` contains the corresponding JSON object, such as transaction
-trace or table delta.
+JSON object with two keys: `msgtype` indicates the type of the
+message, and `data` contains the corresponding JSON object, such as
+transaction trace or table delta. This mode is deprecated and will be
+removed from future releases, as the binary mode is about 15% faster.
 
-In binary header mode (`exp-ws-bin-header=true`), the message format is
-similar to that used in `zmq-plugin` for nodeos: each message starts
-with two native 32-bit unsigned integers indicating message type and
-options, and the rest of the message is JSON data. Message type values
-are available in `chronicle_msgtypes.h` header file. The second integer,
-options, is currently always zero.
+In binary header mode (`exp-ws-bin-header=true`), each message
+consists of a binary 64-bit header and JSON data: the header consists
+of two 32-bit unsigned integers indicating message type and options,
+and the rest of the message is JSON data. Message type values are
+available in `chronicle_msgtypes.h` header file. The second integer,
+options, is currently always set to zero.
 
-The binary header mode increases the exporter performance by
-approximately 15%.
-
-In scanning mode, the exporter expects that the server sends back block
-number acknowledgements in text format, each number in an individual
-binary message.
+In scanning mode, the exporter expects that the server sends back
+block number acknowledgements as decimal numbers in text format, each
+number in an individual binary message.
 
 In interactive mode, the exporter expects that the server sends each
 request as a single binary message. The content of each message is
@@ -181,12 +180,14 @@ cd eos-chronicle
 
 
 
-# State history
+# State history plugin in `nodeos`
 
 In order for Chronicle to function properly, both `trace-history` and
 `chain-state-history` need to be enabled. Also if contract console
 output needs to be present in Chronicle output,
-`trace-history-debug-mode` needs to be enabled too.
+`trace-history-debug-mode` needs to be enabled too. The state history
+endpoint address and port needs to be reachable from the host where
+Chronicle receiver is running.
 
 Example `config.ini` for `nodeos`:
 
@@ -262,18 +263,21 @@ systemctl start chronicle_receiver@memento_wax1
 journalctl -u memento_dbwriter@wax1 -f
 ```
 
-Alternatively, Chronicle data can be downloaded from an archive at
-https://snapshots.eosamsterdam.net/public/chronicle-2.x/ like in the
-example below:
+Alternatively, Chronicle data can be downloaded from an archive at EOS
+Amsterdam snapshots server:
+
+* Cronicle version 2.x: https://snapshots.eosamsterdam.net/public/chronicle-2.x/
+
+* Cronicle version 3.x: https://snapshots.eosamsterdam.net/public/chronicle-3.x/
+
+An example of initializing Chronicle data from a snapshot:
 
 ```
 cd /srv/memento_wax1
-curl https://snapshots.eosamsterdam.net/public/chronicle-2.x/chronicle-data_wax_201836000.tar.gz | tar xzSvf -
+curl https://snapshots.eosamsterdam.net/public/chronicle-3.x/chronicle-data_wax_247519713_3.0.tar.gz | tar xzSvf -
 systemctl enable chronicle_receiver@memento_wax1
 systemctl start chronicle_receiver@memento_wax1
 ```
-
-
 
 
 Only one exporter plugin can be activated at a time (as of now, only
@@ -313,7 +317,7 @@ The following options are available from command line and `config.ini`:
 * `port = PORT` (=`8080`): Port to connect to (nodeos with state-history
   plugin);
 
-* `receiver-state-db-size = N` (=`16384`): State database size in MB;
+* `receiver-state-db-size = N` (=`1024`): State database size in MB;
 
 * `mode = MODE`: mandatory receiver mode. Possible values:
 
@@ -528,6 +532,33 @@ nodeos-1.7.
 * Updated external dependencies to match Leap 4.0
 
 
+## Release 3.0
+
+* Chronicle 3.0 database is not compatible with that of 2.x, so a
+  rescan or restart from a snapshot is required.
+
+* CMake files optimized for customized builds, like the Chronos project.
+
+* Enabled compiler optimization for faster performance.
+
+* Bugfix in Chronicle database: it had an entry for every account even
+  if ABI was empty.
+
+* Improvements in socket error handling.
+
+* New event type: `BLOCK_STARTED (1014)`.
+
+* New attributes in `BLOCK_COMPLETED (1010)` event: `producer`,
+  `previous`, `transaction_mroot`, `action_mroot`, `trx_count`.
+
+* More frequent pause events; slower pause timer ramp-up.
+
+* default value for receiver-state-db-size set to 1024
+
+* The package is renamed from `eosio-chronicle` to `antelope-chronicle`.
+
+
+
 # Ecosystem links
 
 * [Chronicle Telegram chat](https://t.me/+TMWWcV1gBxQiqIkm)
@@ -547,7 +578,6 @@ nodeos-1.7.
 Chronicle](https://github.com/EOSChronicleProject/awesome-chronicle)
 is a list of software projects and services using the software.
 
-
 * [Docker file provided by EOS
   Tribe](https://github.com/EOSTribe/eos-chronicle-docker)
 
@@ -559,7 +589,7 @@ is a list of software projects and services using the software.
 
 Source code repository: https://github.com/EOSChronicleProject/eos-chronicle
 
-Copyright 2018-2020 cc32d9@gmail.com
+Copyright 2018-2023 cc32d9@gmail.com
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
