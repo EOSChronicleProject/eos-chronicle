@@ -561,6 +561,9 @@ nodeos-1.7.
 
 * The package is renamed from `eosio-chronicle` to `antelope-chronicle`.
 
+## Release 3.1
+
+* Bugfix in integer to JSON conversion: primary key in table deltas lost lower 32 bits. 
 
 
 # Ecosystem links
