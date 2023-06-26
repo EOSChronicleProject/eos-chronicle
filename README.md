@@ -531,6 +531,10 @@ nodeos-1.7.
 
 * Updated external dependencies to match Leap 4.0
 
+## Release 2.6
+
+* Bugfix in integer to JSON conversion: primary key in table deltas lost lower 32 bits. 
+
 
 ## Release 3.0
 
