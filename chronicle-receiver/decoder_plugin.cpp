@@ -3,6 +3,7 @@
 #include "decoder_plugin.hpp"
 #include "receiver_plugin.hpp"
 
+#include <type_traits>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -44,22 +45,52 @@ namespace json_encoder {
     }
   }
 
-  inline void arithmetic_to_json(const uint64_t& v, native_to_json_state& state) {
+  inline void native_to_json(const uint64_t& v, native_to_json_state& state) {
     string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
 
-  inline void arithmetic_to_json(const int64_t& v, native_to_json_state& state) {
+  inline void native_to_json(const int64_t& v, native_to_json_state& state) {
     string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
 
-  inline void arithmetic_to_json(const uint32_t& v, native_to_json_state& state) {
+  inline void native_to_json(const uint32_t& v, native_to_json_state& state) {
     string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
 
-  inline void arithmetic_to_json(const int32_t& v, native_to_json_state& state) {
+  inline void native_to_json(const int32_t& v, native_to_json_state& state) {
+    string str = std::to_string(v);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const uint16_t& v, native_to_json_state& state) {
+    string str = std::to_string(v);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const int16_t& v, native_to_json_state& state) {
+    string str = std::to_string(v);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const bool& obj, native_to_json_state& state) {
+    const char* str = obj ? "true" : "false";
+    state.writer.String(str);
+  }
+
+  inline void native_to_json(const uint8_t& v, native_to_json_state& state) {
+    string str = std::to_string(v);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const int8_t& v, native_to_json_state& state) {
+    string str = std::to_string(v);
+    state.writer.String(str.data(), str.length());
+  }
+
+  inline void native_to_json(const char& v, native_to_json_state& state) {
     string str = std::to_string(v);
     state.writer.String(str.data(), str.length());
   }
@@ -104,7 +135,7 @@ namespace json_encoder {
   }
 
   inline void native_to_json(const varuint32& obj, native_to_json_state& state) {
-    arithmetic_to_json(obj.value, state);
+    native_to_json(obj.value, state);
   }
 
   inline void native_to_json(const eosio::ship_protocol::action& obj, native_to_json_state& state) {
@@ -231,24 +262,15 @@ namespace json_encoder {
 
   template <typename T>
   void native_to_json(const T& obj, native_to_json_state& state) {
-    if constexpr (std::is_class_v<T>) {
-        state.writer.StartObject();
-        eosio::for_each_field<T>([&](const char* name, auto&& member) {
-            state.writer.Key(name);
-            native_to_json(member(&obj), state);
-          });
-        state.writer.EndObject();
-      }
-    else {
-      static_assert(std::is_arithmetic_v<T>);
-      arithmetic_to_json(obj, state);
-    }
+    static_assert(std::is_class_v<T>);
+    state.writer.StartObject();
+    eosio::for_each_field<T>([&](const char* name, auto&& member) {
+      state.writer.Key(name);
+      native_to_json(member(&obj), state);
+    });
+    state.writer.EndObject();
   }
 
-  inline void native_to_json(const bool& obj, native_to_json_state& state) {
-    const char* str = obj ? "true" : "false";
-    state.writer.String(str);
-  }
 
   template
   void native_to_json<eosio::ship_protocol::action_receipt_v0>(const eosio::ship_protocol::action_receipt_v0&,
