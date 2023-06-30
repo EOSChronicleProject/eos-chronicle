@@ -263,25 +263,70 @@ systemctl start chronicle_receiver@memento_wax1
 journalctl -u memento_dbwriter@wax1 -f
 ```
 
-Alternatively, Chronicle data can be downloaded from an archive at EOS
-Amsterdam snapshots server:
+# Portable snapshots
 
-* Cronicle version 2.x: https://snapshots.eosamsterdam.net/public/chronicle-2.x/
+As of Chronicle versions 2.7 and 3.2, two new command-line options
+`--save-snapshot` and `--restore-snapshot` allow saving a Chronicle
+state database to a snapshot file or restoring it from such a snapshot
+file. Both options can only be used when the chronicle-receiver
+process is stopped.
 
-* Cronicle version 3.x: https://snapshots.eosamsterdam.net/public/chronicle-3.x/
+The snapshots are compatioble with versions 2.7 or higher and 3.2 or
+higher.
+
+Snapshots for some public networks are available for downloading:
+
+https://snapshots.eosamsterdam.net/public/chronicle_snapshots/
 
 An example of initializing Chronicle data from a snapshot:
 
 ```
-cd /srv/memento_wax1
-curl https://snapshots.eosamsterdam.net/public/chronicle-3.x/chronicle-data_wax_247519713_3.0.tar.gz | tar xzSvf -
+cd /var/local
+wget https://snapshots.eosamsterdam.net/public/chronicle_snapshots/chronicle_snapshot_wax_253338878.gz
+gzip -d chronicle_snapshot_wax_253338878.gz
+
+chronicle-receiver --config-dir=/srv/memento_wax1/chronicle-config --data-dir=/srv/memento_wax1/chronicle-data --restore-snapshot=chronicle_snapshot_wax_253338878
+
 systemctl enable chronicle_receiver@memento_wax1
 systemctl start chronicle_receiver@memento_wax1
 ```
 
+Portable snapshots can be utilized for upgrading Chronicle from version 2.x to 3.x. 
 
-Only one exporter plugin can be activated at a time (as of now, only
-one is implemented, but it can be changed in the future).
+```
+# stop all runing Chronicle processes
+systemctl stop -a  'chronicle_receiver@*'
+
+# download and install the 2.7 package
+cd /var/local
+apt install ./eosio-chronicle-2.7-Clang-11.0.1-ubuntu20.04-x86_64.deb
+
+# save the current chronicle state for all instances
+chronicle-receiver --config-dir=/srv/memento_wax1/chronicle-config --data-dir=/srv/memento_wax1/chronicle-data --save-snapshot=wax.snapshot
+chronicle-receiver --config-dir=/srv/memento_eos1/chronicle-config --data-dir=/srv/memento_eos1/chronicle-data --save-snapshot=eos.snapshot
+chronicle-receiver --config-dir=/srv/memento_proton1/chronicle-config --data-dir=/srv/memento_proton1/chronicle-data --save-snapshot=proton.snapshot
+chronicle-receiver --config-dir=/srv/memento_telos1/chronicle-config --data-dir=/srv/memento_telos1/chronicle-data --save-snapshot=telos.snapshot
+
+# uninstall Chronicle 2.7, download and install Chronicle 3.2
+apt remove eosio-chronicle
+apt install ./antelope-chronicle-3.2-Clang-11.0.1-ubuntu20.04-x86_64.deb
+
+# remove 2.x Chronicle data
+rm -r /srv/*/chronicle-data
+
+# restore the Chronicle data from snapshots
+chronicle-receiver --config-dir=/srv/memento_eos1/chronicle-config --data-dir=/srv/memento_eos1/chronicle-data --restore-snapshot=eos.snapshot
+chronicle-receiver --config-dir=/srv/memento_proton1/chronicle-config --data-dir=/srv/memento_proton1/chronicle-data --restore-snapshot=proton.snapshot
+chronicle-receiver --config-dir=/srv/memento_telos1/chronicle-config --data-dir=/srv/memento_telos1/chronicle-data --restore-snapshot=telos.snapshot
+chronicle-receiver --config-dir=/srv/memento_wax1/chronicle-config --data-dir=/srv/memento_wax1/chronicle-data --restore-snapshot=wax.snapshot
+
+# start all Chronicle processes
+systemctl start -a  'chronicle_receiver@*'
+
+# check the consumer health
+journalctl -u memento_dbwriter@wax1 -f
+```
+
 
 
 # Command-line and configuration options
