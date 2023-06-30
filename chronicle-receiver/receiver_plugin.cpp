@@ -1,6 +1,8 @@
 // copyright defined in LICENSE.txt
 
 #include "receiver_plugin.hpp"
+#include "chronicle_portable_state.hpp"
+
 #include <chainbase/chainbase.hpp>
 
 #include <boost/multi_index_container.hpp>
@@ -30,6 +32,9 @@
 #include <string>
 #include <memory>
 #include <string_view>
+#include <fc/io/datastream.hpp>
+#include <fc/io/raw.hpp>
+#include <boost/iostreams/device/file_descriptor.hpp>
 #include <fc/log/logger.hpp>
 #include <fc/exception/exception.hpp>
 #include <queue>
@@ -63,6 +68,8 @@ namespace websocket = boost::beast::websocket;
 namespace bip       = boost::interprocess;
 namespace bfs       = boost::filesystem;
 
+namespace cps       = chronicle_portable_state;
+
 using asio::ip::tcp;
 using boost::beast::flat_buffer;
 using boost::system::error_code;
@@ -93,6 +100,8 @@ namespace {
   const char* RCV_ENABLE_TABLES_FILTER_OPT = "enable-tables-filter";
   const char* RCV_INCLUDE_TABLES_CONTRACT_OPT = "include-tables-contract";
   const char* RCV_BLACKLIST_TABLES_CONTRACT_OPT = "blacklist-tables-contract";
+  const char* RCV_SAVE_SNAPSHOT_OPT = "save-snapshot";
+  const char* RCV_RESTORE_SNAPSHOT_OPT = "restore-snapshot";
 
   const char* RCV_MODE_SCAN = "scan";
   const char* RCV_MODE_SCAN_NOEXP = "scan-noexport";
@@ -377,21 +386,25 @@ public:
   }
 
 
-  void load_state() {
-    bool did_undo = false;
-    uint32_t depth;
-    {
-      bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
-      auto &index = db->get_index<chronicle::state_index>();
-      if( index.has_undo_session() ) {
-        auto range = index.undo_stack_revision_range();
-        depth = range.second - range.first;
-        ilog("Database has ${d} uncommitted revisions. Reverting back", ("d",depth));
-        while (index.has_undo_session() > 0)
-          db->undo();
-        did_undo = true;
-      }
+  uint32_t revert_uncommitted_revisions() {
+    bip::scoped_lock<bip::interprocess_mutex> lock(dblock->mutex);
+    uint32_t depth = 0;
+    auto &index = db->get_index<chronicle::state_index>();
+    if( index.has_undo_session() ) {
+      auto range = index.undo_stack_revision_range();
+      depth = range.second - range.first;
+      ilog("Database has ${d} uncommitted revisions. Reverting back", ("d",depth));
+      while (index.has_undo_session() > 0)
+        db->undo();
     }
+
+    return depth;
+  }
+
+
+  void load_state() {
+    uint32_t depth = revert_uncommitted_revisions();
+    bool did_undo = (depth > 0);
 
     const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
     auto itr = idx.begin();
@@ -1299,6 +1312,192 @@ public:
       aborting = true;
     }
   }
+
+
+  /* ****** portable snapshot writer and reader ******  */
+
+  void write_snapshot(std::ofstream& snap_out) {
+    revert_uncommitted_revisions();
+
+    uint64_t magic_number = cps::MAGIC_NUMBER;
+    snap_out.write((char*)&magic_number, sizeof(uint64_t));
+
+    boost::iostreams::filtering_ostreambuf buf(snap_out);
+    fc::datastream<boost::iostreams::filtering_ostreambuf&> ds{buf};
+
+    cps::portable_format_version version {
+      .format_version = cps::CURRENT_VERSION,
+      .chronicle_version = app().version_string()
+    };
+    fc::raw::pack(ds, version);
+    ilog("format_version: ${v}, chronicle_version: ${c}", ("v",version.format_version)("c",version.chronicle_version));
+
+    {
+      const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
+      auto itr = idx.begin();
+      if( itr == idx.end() ) {
+        throw runtime_error("The chronicle database does not have a valid state");
+      }
+
+      cps::state_object_v0 entry {
+        .head = itr->head,
+        .head_id = itr->head_id,
+        .irreversible = itr->irreversible,
+        .irreversible_id = itr->irreversible_id
+      };
+      fc::raw::pack(ds, cps::row(entry));
+      ilog("head: ${h}, head_id: ${hi}, irreversible: ${i}, irreversible_id: ${ii}",
+           ("h",entry.head)("hi",fc::to_hex((const char*)entry.head_id.data(), entry.head_id.capacity()))
+           ("i",entry.irreversible)("ii",fc::to_hex((const char*)entry.irreversible_id.data(), entry.irreversible_id.capacity())));
+    }
+
+    {
+      uint32_t count = 0;
+      const auto& idx = db->get_index<chronicle::received_block_index, chronicle::by_blocknum>();
+      auto itr = idx.begin();
+      while( itr != idx.end() ) {
+        cps::received_block_object_v0 entry {
+          .block_index = itr->block_index,
+          .block_id    = itr->block_id
+        };
+        fc::raw::pack(ds, cps::row(entry));
+        ++count;
+        ++itr;
+      }
+      ilog("Wrote ${c} rows from received_block_index", ("c", count));
+    }
+
+    {
+      uint32_t count = 0;
+      const auto& idx = db->get_index<chronicle::contract_abi_index, chronicle::by_name>();
+      auto itr = idx.begin();
+      while( itr != idx.end() ) {
+        if( itr->abi.size() > 0 ) {
+          cps::contract_abi_object_v0 entry {
+            .account = itr->account,
+          };
+          entry.abi.assign(itr->abi.data(), itr->abi.data() + itr->abi.size());
+          fc::raw::pack(ds, cps::row(entry));
+          ++count;
+        }
+        ++itr;
+      }
+      ilog("Wrote ${c} rows from contract_abi_index", ("c", count));
+    }
+
+    {
+      uint32_t count = 0;
+      const auto& idx = db->get_index<chronicle::contract_abi_hist_index, chronicle::by_name_and_block>();
+      auto itr = idx.begin();
+      while( itr != idx.end() ) {
+        if( itr->abi.size() > 0 ) {
+          cps::contract_abi_history_v0 entry {
+            .account     = itr->account,
+            .block_index = itr->block_index
+          };
+          entry.abi.assign(itr->abi.data(), itr->abi.data() + itr->abi.size());
+           fc::raw::pack(ds, cps::row(entry));
+          ++count;
+        }
+        ++itr;
+      }
+      ilog("Wrote ${c} rows from contract_abi_hist_index", ("c", count));
+    }
+
+    cps::stream_end_v0 stream_end { .magic_number = cps::MAGIC_NUMBER };
+    fc::raw::pack(ds, cps::row(stream_end));
+  }
+
+
+
+  void read_snapshot(std::ifstream& snap_in) {
+    uint64_t magic_number;
+    snap_in.read((char*)&magic_number, sizeof(uint64_t));
+    if( magic_number != cps::MAGIC_NUMBER ) {
+      throw runtime_error("Invalid snapshot file: wrong magic number");
+    }
+
+    boost::iostreams::filtering_istreambuf buf(snap_in);
+    fc::datastream<boost::iostreams::filtering_istreambuf&> ds{buf};
+
+    cps::portable_format_version version;
+    fc::raw::unpack(ds, version);
+    ilog("format_version: ${v}, chronicle_version: ${c}", ("v",version.format_version)("c",version.chronicle_version));
+    if( version.format_version < cps::MIN_VERSION_SUPPORTED || version.format_version > cps::MAX_VERSION_SUPPORTED ) {
+      throw runtime_error("Unsupported snapshot format version");
+    }
+
+    {
+      const auto& idx = db->get_index<chronicle::state_index, chronicle::by_id>();
+      auto itr = idx.begin();
+      if( itr != idx.end() ) {
+        throw runtime_error("The chronicle database contains a valid state. Aborting");
+      }
+    }
+
+    uint32_t count_received_block = 0;
+    uint32_t count_contract_abi = 0;
+    uint32_t count_contract_abi_hist = 0;
+
+    bool stream_ended = false;
+    do {
+      cps::row row;
+      fc::raw::unpack(ds, row);
+      if( std::holds_alternative<cps::state_object_v0>(row) ) {
+        cps::state_object_v0& entry = std::get<cps::state_object_v0>(row);
+        db->create<chronicle::state_object>( [&]( chronicle::state_object& o ) {
+          o.head = entry.head;
+          o.head_id = entry.head_id;
+          o.irreversible = entry.irreversible;
+          o.irreversible_id = entry.irreversible_id;
+        });
+        ilog("head: ${h}, head_id: ${hi}, irreversible: ${i}, irreversible_id: ${ii}",
+             ("h",entry.head)("hi",fc::to_hex((const char*)entry.head_id.data(), entry.head_id.capacity()))
+             ("i",entry.irreversible)("ii",fc::to_hex((const char*)entry.irreversible_id.data(), entry.irreversible_id.capacity())));
+
+      } else if( std::holds_alternative<cps::received_block_object_v0>(row) ) {
+        cps::received_block_object_v0& entry = std::get<cps::received_block_object_v0>(row);
+        db->create<chronicle::received_block_object>( [&]( chronicle::received_block_object& o ) {
+          o.block_index = entry.block_index;
+          o.block_id = entry.block_id;
+        });
+        ++count_received_block;
+
+      } else if( std::holds_alternative<cps::contract_abi_object_v0>(row) ) {
+        cps::contract_abi_object_v0& entry = std::get<cps::contract_abi_object_v0>(row);
+        const eosio::input_stream data(entry.abi.data(), entry.abi.data() + entry.abi.size());
+        db->create<chronicle::contract_abi_object>( [&]( chronicle::contract_abi_object& o ) {
+          o.account = entry.account;
+          o.set_abi(data);
+        });
+        ++count_contract_abi;
+
+      } else if( std::holds_alternative<cps::contract_abi_history_v0>(row) ) {
+        cps::contract_abi_history_v0& entry = std::get<cps::contract_abi_history_v0>(row);
+        const eosio::input_stream data(entry.abi.data(), entry.abi.data() + entry.abi.size());
+        db->create<chronicle::contract_abi_history>( [&]( chronicle::contract_abi_history& o ) {
+          o.account = entry.account;
+          o.block_index = entry.block_index;
+          o.set_abi(data);
+        });
+        ++count_contract_abi_hist;
+
+      } else if( std::holds_alternative<cps::stream_end_v0>(row) ) {
+        cps::stream_end_v0& entry = std::get<cps::stream_end_v0>(row);
+        if( entry.magic_number == cps::MAGIC_NUMBER ) {
+          stream_ended = true;
+        }
+        else {
+          throw runtime_error("Invalid magic number at rthe end of the stream. Aborting");
+        }
+      }
+    } while( !stream_ended );
+
+    ilog("Read ${c} rows to received_block_index", ("c", count_received_block));
+    ilog("Read ${c} rows to contract_abi_index", ("c", count_contract_abi));
+    ilog("Read ${c} rows to contract_abi_hist_index", ("c", count_contract_abi_hist));
+  }
+
 };
 
 
@@ -1342,6 +1541,8 @@ void receiver_plugin::set_program_options( options_description& cli, options_des
     (RCV_ENABLE_TABLES_FILTER_OPT, bpo::value<bool>()->default_value(false), "Filter table deltas by contract")
     (RCV_INCLUDE_TABLES_CONTRACT_OPT, bpo::value<vector<string>>(), "Contract account(s) to match in table deltas")
     (RCV_BLACKLIST_TABLES_CONTRACT_OPT, bpo::value<vector<string>>(), "Blacklisted contract account(s) for table deltas")
+    (RCV_SAVE_SNAPSHOT_OPT, bpo::value<string>(), "Save a portable Chronicle snapshot to a file")
+    (RCV_RESTORE_SNAPSHOT_OPT, bpo::value<string>(), "Restore from a portable Chronicle snapshot")
     ;
 }
 
@@ -1352,28 +1553,40 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       throw std::runtime_error("--data-dir option is required");
     }
 
-    if( !options.count(RCV_MODE_OPT) ) {
-      throw std::runtime_error("mode option is required");
-    }
+    bool do_save_snapshot = (options.count(RCV_SAVE_SNAPSHOT_OPT) > 0 );
+    bool do_restore_snapshot = (options.count(RCV_RESTORE_SNAPSHOT_OPT) > 0);
+    if( do_save_snapshot || do_restore_snapshot ) {
+      if( do_save_snapshot && do_restore_snapshot ) {
+        throw std::runtime_error("--save-snapshot and --restore-snapshot cannot be used at the same time");
+      }
 
-    my->irreversible_only = options.at(RCV_IRREV_ONLY_OPT).as<bool>();
-
-    string receiver_mode = options.at(RCV_MODE_OPT).as<string>();
-    if (receiver_mode == RCV_MODE_SCAN) {
-      my->noexport_mode = false;
-      my->interactive_mode = false;
-    }
-    else if (receiver_mode == RCV_MODE_SCAN_NOEXP) {
       my->noexport_mode = true;
       my->interactive_mode = false;
     }
-    else if (receiver_mode == RCV_MODE_INTERACTIVE) {
-      my->noexport_mode = false;
-      my->interactive_mode = true;
-      my->irreversible_only = true;
-    }
+    else {
+      if( !options.count(RCV_MODE_OPT) ) {
+        throw std::runtime_error("mode option is required");
+      }
 
-    ilog("Starting in ${m} mode", ("m", receiver_mode));
+      my->irreversible_only = options.at(RCV_IRREV_ONLY_OPT).as<bool>();
+
+      string receiver_mode = options.at(RCV_MODE_OPT).as<string>();
+      if (receiver_mode == RCV_MODE_SCAN) {
+        my->noexport_mode = false;
+        my->interactive_mode = false;
+      }
+      else if (receiver_mode == RCV_MODE_SCAN_NOEXP) {
+        my->noexport_mode = true;
+        my->interactive_mode = false;
+      }
+      else if (receiver_mode == RCV_MODE_INTERACTIVE) {
+        my->noexport_mode = false;
+        my->interactive_mode = true;
+        my->irreversible_only = true;
+      }
+
+      ilog("Starting in ${m} mode", ("m", receiver_mode));
+    }
 
     string dbdir = app().data_dir().native() + "/receiver-state";
     bfs::create_directories(dbdir);
@@ -1418,146 +1631,178 @@ void receiver_plugin::plugin_initialize( const variables_map& options ) {
       my->db->add_index<chronicle::contract_abi_hist_index>();
     }
 
-    my->resolver = std::make_shared<tcp::resolver>(app().get_io_service());
+    if( do_save_snapshot ) {
+      string filename = options.at(RCV_SAVE_SNAPSHOT_OPT).as<string>();
+      ilog("Saving a portable Chronicle snapshot to ${f}", ("f", filename));
 
-    my->stream = std::make_shared<websocket::stream<tcp::socket>>(app().get_io_service());
-    my->stream->binary(true);
-    my->stream->read_message_max(0x1ull<<36);
+      auto snap_out = std::ofstream(filename, (std::ios::out | std::ios::binary));
+      try {
+        snap_out.exceptions(std::ios::badbit | std::ios::failbit);
+      }
+      catch( std::exception &e ) {
+        throw std::runtime_error(string("Cannot open snapshot for writing: ") + string(strerror(errno)));
+      }
 
-    my->host = options.at(RCV_HOST_OPT).as<string>();
-    my->port = options.at(RCV_PORT_OPT).as<string>();
-    my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
-    my->max_queue_size = options.at(RCV_MAX_QUEUE_OPT).as<uint32_t>();
+      my->write_snapshot(snap_out);
+      snap_out.flush();
+      snap_out.close();
 
-    my->skip_block_events = options.at(RCV_SKIP_BLOCK_EVT_OPT).as<bool>();
-    if( my->skip_block_events )
-      ilog("Skipping BLOCK events");
-
-    my->skip_table_deltas = options.at(RCV_SKIP_DELTAS_OPT).as<bool>();
-    if( my->skip_table_deltas )
-      ilog("Skipping table delta events");
-
-    my->skip_traces = options.at(RCV_SKIP_TRACES_OPT).as<bool>();
-    if( my->skip_traces )
-      ilog("Skipping transaction trace events");
-
-    my->skip_account_info = options.at(RCV_SKIP_ACCOUNT_INFO_OPT).as<bool>();
-    if( my->skip_account_info )
-      ilog("Skipping account permissions and metadata events");
-
-    if( my->irreversible_only )
-      ilog("Fetching irreversible blocks only");
-
-    my->start_block_num = options.at(RCV_START_BLOCK_OPT).as<uint32_t>();
-    if( my->interactive_mode and my->start_block_num > 0 ) {
-      throw std::runtime_error("cannot use start-block in interactive mode");
+      ilog("Wrote the snapshot to ${f}", ("f", filename));
+      app().quit();
     }
+    else if( do_restore_snapshot ) {
+      string filename = options.at(RCV_RESTORE_SNAPSHOT_OPT).as<string>();
+      ilog("Restoring a portable Chronicle snapshot from ${f}", ("f", filename));
 
-    my->end_block_num = options.at(RCV_END_BLOCK_OPT).as<uint32_t>();
+      auto snap_in = std::ifstream(filename, (std::ios::in | std::ios::binary));
+      my->read_snapshot(snap_in);
+      snap_in.close();
 
-    my->stale_check_deadline_msec = options.at(RCV_STALE_DEADLINE_OPT).as<uint32_t>();
-
-    my->enable_rcvr_filter = options.at(RCV_ENABLE_RCVR_FILTER_OPT).as<bool>();
-    if( my->enable_rcvr_filter ) {
-      ilog("Enabled receiver filter:");
-
-      if( !options.count(RCV_INCLUDE_RECEIVER_OPT) ) {
-        throw std::runtime_error("Need at least one name in include-receiver option");
-      }
-
-      auto filter_accs = options.at(RCV_INCLUDE_RECEIVER_OPT).as<vector<string>>();
-
-      for(string accstr : filter_accs) {
-        uint64_t accname = eosio::string_to_name_strict(accstr);
-        my->rcvr_filter.insert(accname);
-        ilog("  filtering on account: ${a}", ("a",accstr));
-      }
+      ilog("Restored the state from ${f}", ("f", filename));
+      app().quit();
     }
+    else {
+      my->resolver = std::make_shared<tcp::resolver>(app().get_io_service());
 
-    my->enable_auth_filter = options.at(RCV_ENABLE_AUTH_FILTER_OPT).as<bool>();
-    if( my->enable_auth_filter ) {
-      ilog("Enabled authorizer filter:");
+      my->stream = std::make_shared<websocket::stream<tcp::socket>>(app().get_io_service());
+      my->stream->binary(true);
+      my->stream->read_message_max(0x1ull<<36);
 
-      if( !options.count(RCV_INCLUDE_AUTH_OPT) ) {
-        throw std::runtime_error("Need at least one name in include-auth option");
+      my->host = options.at(RCV_HOST_OPT).as<string>();
+      my->port = options.at(RCV_PORT_OPT).as<string>();
+      my->report_every = options.at(RCV_EVERY_OPT).as<uint32_t>();
+      my->max_queue_size = options.at(RCV_MAX_QUEUE_OPT).as<uint32_t>();
+
+      my->skip_block_events = options.at(RCV_SKIP_BLOCK_EVT_OPT).as<bool>();
+      if( my->skip_block_events )
+        ilog("Skipping BLOCK events");
+
+      my->skip_table_deltas = options.at(RCV_SKIP_DELTAS_OPT).as<bool>();
+      if( my->skip_table_deltas )
+        ilog("Skipping table delta events");
+
+      my->skip_traces = options.at(RCV_SKIP_TRACES_OPT).as<bool>();
+      if( my->skip_traces )
+        ilog("Skipping transaction trace events");
+
+      my->skip_account_info = options.at(RCV_SKIP_ACCOUNT_INFO_OPT).as<bool>();
+      if( my->skip_account_info )
+        ilog("Skipping account permissions and metadata events");
+
+      if( my->irreversible_only )
+        ilog("Fetching irreversible blocks only");
+
+      my->start_block_num = options.at(RCV_START_BLOCK_OPT).as<uint32_t>();
+      if( my->interactive_mode and my->start_block_num > 0 ) {
+        throw std::runtime_error("cannot use start-block in interactive mode");
       }
 
-      auto filter_accs = options.at(RCV_INCLUDE_AUTH_OPT).as<vector<string>>();
+      my->end_block_num = options.at(RCV_END_BLOCK_OPT).as<uint32_t>();
 
-      for(string accstr : filter_accs) {
-        uint64_t accname = eosio::string_to_name_strict(accstr);
-        my->auth_filter.insert(accname);
-        ilog("  filtering on authorizer: ${a}", ("a",accstr));
+      my->stale_check_deadline_msec = options.at(RCV_STALE_DEADLINE_OPT).as<uint32_t>();
+
+      my->enable_rcvr_filter = options.at(RCV_ENABLE_RCVR_FILTER_OPT).as<bool>();
+      if( my->enable_rcvr_filter ) {
+        ilog("Enabled receiver filter:");
+
+        if( !options.count(RCV_INCLUDE_RECEIVER_OPT) ) {
+          throw std::runtime_error("Need at least one name in include-receiver option");
+        }
+
+        auto filter_accs = options.at(RCV_INCLUDE_RECEIVER_OPT).as<vector<string>>();
+
+        for(string accstr : filter_accs) {
+          uint64_t accname = eosio::string_to_name_strict(accstr);
+          my->rcvr_filter.insert(accname);
+          ilog("  filtering on account: ${a}", ("a",accstr));
+        }
       }
+
+      my->enable_auth_filter = options.at(RCV_ENABLE_AUTH_FILTER_OPT).as<bool>();
+      if( my->enable_auth_filter ) {
+        ilog("Enabled authorizer filter:");
+
+        if( !options.count(RCV_INCLUDE_AUTH_OPT) ) {
+          throw std::runtime_error("Need at least one name in include-auth option");
+        }
+
+        auto filter_accs = options.at(RCV_INCLUDE_AUTH_OPT).as<vector<string>>();
+
+        for(string accstr : filter_accs) {
+          uint64_t accname = eosio::string_to_name_strict(accstr);
+          my->auth_filter.insert(accname);
+          ilog("  filtering on authorizer: ${a}", ("a",accstr));
+        }
+      }
+
+      my->do_trace_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
+
+      vector<string> blacklist_str({string("eosio:onblock")});
+
+      if( options.count(RCV_BLACKLIST_ACTION_OPT) ) {
+        auto blacklist_entries = options.at(RCV_BLACKLIST_ACTION_OPT).as<vector<string>>();
+        for(string bl_entry : blacklist_entries) {
+          blacklist_str.emplace_back(bl_entry);
+        }
+      }
+
+      for( auto blpair : blacklist_str ) {
+        std::vector<std::string> parts;
+        boost::split( parts, blpair, boost::is_any_of(":"));
+        if( parts.size() != 2 )
+          throw std::runtime_error(string("Invalid blacklist entry: ") + blpair);
+
+        std::vector<uint64_t> parts_n;
+        for( auto s : parts ) {
+          uint64_t v = eosio::string_to_name_strict(s);
+          parts_n.emplace_back(v);
+        }
+
+        my->blacklist_actions[parts_n[0]].insert(parts_n[1]);
+      }
+
+      for( auto itr_contract = my->blacklist_actions.begin();
+           itr_contract != my->blacklist_actions.end();
+           ++itr_contract ) {
+
+        for( auto itr_action = itr_contract->second.begin();
+             itr_action != itr_contract->second.end();
+             ++itr_action ) {
+          ilog("Action blacklist entry: ${c}:${a}",
+               ("c", eosio::name_to_string(itr_contract->first))("a", eosio::name_to_string(*itr_action)));
+        }
+      }
+
+      my->enable_tables_filter = options.at(RCV_ENABLE_TABLES_FILTER_OPT).as<bool>();
+      if( my->enable_tables_filter ) {
+        ilog("Enabled table deltas filter:");
+
+        if( !options.count(RCV_INCLUDE_TABLES_CONTRACT_OPT) ) {
+          throw std::runtime_error("Need at least one name in include-tables-contract option");
+        }
+
+        auto filter_accs = options.at(RCV_INCLUDE_TABLES_CONTRACT_OPT).as<vector<string>>();
+
+        for(string accstr : filter_accs) {
+          uint64_t accname = eosio::string_to_name_strict(accstr);
+          my->tables_filter.insert(accname);
+          ilog("  filtering contract: ${a}", ("a",accstr));
+        }
+      }
+
+      if( options.count(RCV_BLACKLIST_TABLES_CONTRACT_OPT) ) {
+        my->enable_tables_blacklist = true;
+        auto blacklist_table_accs = options.at(RCV_BLACKLIST_TABLES_CONTRACT_OPT).as<vector<string>>();
+        for(string accstr : blacklist_table_accs) {
+          uint64_t accname = eosio::string_to_name_strict(accstr);
+          my->tables_blacklist.insert(accname);
+          ilog("  blacklisted contract for table deltas: ${a}", ("a",accstr));
+        }
+      }
+
+      my->init();
+      ilog("Initialized receiver_plugin");
     }
-
-    my->do_trace_filter = (my->enable_rcvr_filter || my->enable_auth_filter) ? true:false;
-
-    vector<string> blacklist_str({string("eosio:onblock")});
-
-    if( options.count(RCV_BLACKLIST_ACTION_OPT) ) {
-      auto blacklist_entries = options.at(RCV_BLACKLIST_ACTION_OPT).as<vector<string>>();
-      for(string bl_entry : blacklist_entries) {
-        blacklist_str.emplace_back(bl_entry);
-      }
-    }
-
-    for( auto blpair : blacklist_str ) {
-      std::vector<std::string> parts;
-      boost::split( parts, blpair, boost::is_any_of(":"));
-      if( parts.size() != 2 )
-        throw std::runtime_error(string("Invalid blacklist entry: ") + blpair);
-
-      std::vector<uint64_t> parts_n;
-      for( auto s : parts ) {
-        uint64_t v = eosio::string_to_name_strict(s);
-        parts_n.emplace_back(v);
-      }
-
-      my->blacklist_actions[parts_n[0]].insert(parts_n[1]);
-    }
-
-    for( auto itr_contract = my->blacklist_actions.begin();
-         itr_contract != my->blacklist_actions.end();
-         ++itr_contract ) {
-
-      for( auto itr_action = itr_contract->second.begin();
-           itr_action != itr_contract->second.end();
-           ++itr_action ) {
-        ilog("Action blacklist entry: ${c}:${a}",
-             ("c", eosio::name_to_string(itr_contract->first))("a", eosio::name_to_string(*itr_action)));
-      }
-    }
-
-    my->enable_tables_filter = options.at(RCV_ENABLE_TABLES_FILTER_OPT).as<bool>();
-    if( my->enable_tables_filter ) {
-      ilog("Enabled table deltas filter:");
-
-      if( !options.count(RCV_INCLUDE_TABLES_CONTRACT_OPT) ) {
-        throw std::runtime_error("Need at least one name in include-tables-contract option");
-      }
-
-      auto filter_accs = options.at(RCV_INCLUDE_TABLES_CONTRACT_OPT).as<vector<string>>();
-
-      for(string accstr : filter_accs) {
-        uint64_t accname = eosio::string_to_name_strict(accstr);
-        my->tables_filter.insert(accname);
-        ilog("  filtering contract: ${a}", ("a",accstr));
-      }
-    }
-
-    if( options.count(RCV_BLACKLIST_TABLES_CONTRACT_OPT) ) {
-      my->enable_tables_blacklist = true;
-      auto blacklist_table_accs = options.at(RCV_BLACKLIST_TABLES_CONTRACT_OPT).as<vector<string>>();
-      for(string accstr : blacklist_table_accs) {
-        uint64_t accname = eosio::string_to_name_strict(accstr);
-        my->tables_blacklist.insert(accname);
-        ilog("  blacklisted contract for table deltas: ${a}", ("a",accstr));
-      }
-    }
-
-    my->init();
-    ilog("Initialized receiver_plugin");
   }
   FC_LOG_AND_RETHROW();
 }
@@ -1682,6 +1927,10 @@ void receiver_plugin::abort_receiver() {
 
 bool is_noexport_opt(const variables_map& options)
 {
+  if( options.count(RCV_SAVE_SNAPSHOT_OPT) || options.count(RCV_RESTORE_SNAPSHOT_OPT) ) {
+    return true;
+  }
+
   if( !options.count(RCV_MODE_OPT) ) {
     throw std::runtime_error("mode option is required");
   }
