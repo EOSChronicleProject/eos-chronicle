@@ -535,6 +535,9 @@ nodeos-1.7.
 
 * Bugfix in integer to JSON conversion: primary key in table deltas lost lower 32 bits. 
 
+## Release 2.7
+
+* Added options: `--save-snapshot` and `--restore-snapshot`
 
 ## Release 3.0
 
@@ -564,6 +567,11 @@ nodeos-1.7.
 ## Release 3.1
 
 * Bugfix in integer to JSON conversion: primary key in table deltas lost lower 32 bits. 
+
+## Release 3.2
+
+* Added options: `--save-snapshot` and `--restore-snapshot`
+
 
 
 # Ecosystem links

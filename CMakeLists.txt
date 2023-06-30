@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.13)
-project(antelope-chronicle VERSION 3.1)
+project(antelope-chronicle VERSION 3.2)
 
 set(default_build_type "RelWithDebInfo")
 
