@@ -27,8 +27,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PLATFORM_SPECIFIC_LIBS pthread)
 
-set(CMAKE_BUILD_TYPE Debug)
-
 add_subdirectory(external/abieos EXCLUDE_FROM_ALL)
 add_subdirectory(external/leap/libraries/chainbase EXCLUDE_FROM_ALL)
 add_subdirectory(external/leap/libraries/appbase EXCLUDE_FROM_ALL)
