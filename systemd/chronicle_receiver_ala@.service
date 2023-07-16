@@ -2,7 +2,7 @@
 Description=Chronicle receiver
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/chronicle-receiver --config-dir=/srv/%i/chronicle-config --data-dir=/srv/%i/chronicle-data
+ExecStart=/usr/local/sbin/chronicle-receiver-ala --config-dir=/srv/%i/chronicle-config --data-dir=/srv/%i/chronicle-data
 TimeoutStopSec=300s
 Restart=on-success
 RestartSec=10

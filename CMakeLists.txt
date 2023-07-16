@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.13)
-project(antelope-chronicle VERSION 3.2)
+project(antelope-chronicle-ala VERSION 3.2)
 
 set(default_build_type "RelWithDebInfo")
 
@@ -12,7 +12,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 
-set(CHRONICLE_RECEIVER_NAME "chronicle-receiver" CACHE INTERNAL "")
+set(CHRONICLE_RECEIVER_NAME "chronicle-receiver-ala" CACHE INTERNAL "")
 set(CHRONICLE_JSON_EXPORT TRUE CACHE INTERNAL "")
 
 include(GNUInstallDirs)
@@ -88,7 +88,7 @@ endforeach()
 
 ## Installables
 install(TARGETS ${CHRONICLE_RECEIVER_NAME} RUNTIME DESTINATION sbin)
-install(FILES systemd/chronicle_receiver\@.service DESTINATION share)
+install(FILES systemd/chronicle_receiver_ala\@.service DESTINATION share)
 
 include(package.cmake)
 include(CPack)
