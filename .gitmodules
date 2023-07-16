@@ -1,7 +1,3 @@
-[submodule "external/abieos"]
-	path = external/abieos
-	url = https://github.com/AntelopeIO/abieos.git
-	branch = main
 [submodule "external/leap"]
 	path = external/leap
 	url = https://github.com/AntelopeIO/leap.git
