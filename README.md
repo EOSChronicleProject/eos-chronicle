@@ -617,6 +617,9 @@ nodeos-1.7.
 
 * Added options: `--save-snapshot` and `--restore-snapshot`
 
+## Release 3.3
+
+* abieos updated to PR#24, fixing a floating-point overflow bug
 
 
 # Ecosystem links
